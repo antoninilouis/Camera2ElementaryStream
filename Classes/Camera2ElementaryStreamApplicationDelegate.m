@@ -6,9 +6,9 @@
  Application delegate
  */
 
-#import "Camera2ElementalStreamApplicationDelegate.h"
+#import "Camera2ElementaryStreamApplicationDelegate.h"
 
-@implementation Camera2ElementalStreamApplicationDelegate
+@implementation Camera2ElementaryStreamApplicationDelegate
 
 
 @end
