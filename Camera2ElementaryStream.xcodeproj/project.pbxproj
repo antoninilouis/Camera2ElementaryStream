@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		2E18D7EB259615EE00ED472F /* Camera2ElementaryStreamCapturePipeline.m in Sources */ = {isa = PBXBuildFile; fileRef = 2E18D7E9259612B900ED472F /* Camera2ElementaryStreamCapturePipeline.m */; };
 		2E9C593C2593ED50006623C9 /* Camera2ElementaryStreamApplicationDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 2E9C593B2593ED50006623C9 /* Camera2ElementaryStreamApplicationDelegate.m */; };
 		2E9C59432593EED3006623C9 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2E9C59422593EED3006623C9 /* Foundation.framework */; };
 		2E9C59462593EF40006623C9 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2E9C59452593EF40006623C9 /* UIKit.framework */; };
@@ -17,6 +18,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		2E18D7E82596125500ED472F /* Camera2ElementaryStreamCapturePipeline.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Camera2ElementaryStreamCapturePipeline.h; sourceTree = "<group>"; };
+		2E18D7E9259612B900ED472F /* Camera2ElementaryStreamCapturePipeline.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = Camera2ElementaryStreamCapturePipeline.m; sourceTree = "<group>"; };
 		2E9C593B2593ED50006623C9 /* Camera2ElementaryStreamApplicationDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = Camera2ElementaryStreamApplicationDelegate.m; sourceTree = "<group>"; };
 		2E9C593E2593EDA4006623C9 /* Camera2ElementaryStreamApplicationDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Camera2ElementaryStreamApplicationDelegate.h; sourceTree = "<group>"; };
 		2E9C59422593EED3006623C9 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS14.3.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
@@ -96,6 +99,8 @@
 				2E9C59512593F25A006623C9 /* Camera2ElementaryStreamViewController.m */,
 				2E9C593E2593EDA4006623C9 /* Camera2ElementaryStreamApplicationDelegate.h */,
 				2E9C593B2593ED50006623C9 /* Camera2ElementaryStreamApplicationDelegate.m */,
+				2E18D7E82596125500ED472F /* Camera2ElementaryStreamCapturePipeline.h */,
+				2E18D7E9259612B900ED472F /* Camera2ElementaryStreamCapturePipeline.m */,
 			);
 			path = Classes;
 			sourceTree = "<group>";
@@ -172,6 +177,7 @@
 			files = (
 				2E9C594B2593F0A5006623C9 /* main.m in Sources */,
 				2E9C593C2593ED50006623C9 /* Camera2ElementaryStreamApplicationDelegate.m in Sources */,
+				2E18D7EB259615EE00ED472F /* Camera2ElementaryStreamCapturePipeline.m in Sources */,
 				2E9C59522593F25A006623C9 /* Camera2ElementaryStreamViewController.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
