@@ -13,6 +13,11 @@
 
 @interface Camera2ElementaryStreamViewController : UIViewController <Camera2ElementaryStreamCapturePipelineDelegate>
 
+// Camera2ElementaryStreamCapturePipelineDelegate
+- (void)startRendering:(AVCaptureVideoPreviewLayer *)previewLayer;
+
+@property (strong, nonatomic) IBOutlet UIButton *recordButton;
+
 @end
 
 #endif /* Camera2ElementaryStreamViewController_h */

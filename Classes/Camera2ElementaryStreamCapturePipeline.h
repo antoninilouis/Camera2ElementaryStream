@@ -11,12 +11,20 @@
 #import <AVFoundation/AVFoundation.h>
 
 @protocol Camera2ElementaryStreamCapturePipelineDelegate
+@required
+- (void)startRendering:(AVCaptureVideoPreviewLayer *)previewLayer;
 
 @end
 
 @interface Camera2ElementaryStreamCapturePipeline : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
 
 - (instancetype)initWithDelegate:(id<Camera2ElementaryStreamCapturePipelineDelegate>)delegate callbackQueue:(dispatch_queue_t)queue;
+
+- (void)startRunning;
+
+- (void)startRendering;
+
+@property(nonatomic, strong) __attribute__((NSObject)) CMFormatDescriptionRef outputVideoFormatDescription;
 
 @end
 

@@ -16,12 +16,26 @@
 
 - (void)viewDidLoad
 {
-  _capturePipeline = [[Camera2ElementaryStreamCapturePipeline alloc] initWithDelegate:self callbackQueue:dispatch_get_main_queue()];
   [super viewDidLoad];
+  _capturePipeline = [[Camera2ElementaryStreamCapturePipeline alloc] initWithDelegate:self callbackQueue:dispatch_get_main_queue()];
 }
 
 #pragma mark - UI
 
+- (IBAction)toggleRendering:(id)sender
+{
+  [self.recordButton setTitle:@"Stop" forState:UIControlStateNormal];
+  [_capturePipeline startRunning];
+  [_capturePipeline startRendering];
+}
 
+#pragma mark - Camera2ElementaryStreamCapturePipelineDelegate
+
+- (void)startRendering:(AVCaptureVideoPreviewLayer *)previewLayer
+{
+  // Add preview layer into the view's layer hierarchy.
+  previewLayer.frame = self.view.bounds;
+  [self.view.layer addSublayer:previewLayer];
+}
 
 @end

@@ -15,7 +15,9 @@
 @implementation Camera2ElementaryStreamCapturePipeline {
   AVCaptureSession *_captureSession;
   AVCaptureDevice *_videoDevice;
+  AVCaptureConnection *_videoConnection;
   BOOL _running;
+  BOOL _rendering;
 
   dispatch_queue_t _sessionQueue;
   dispatch_queue_t _videoDataOutputQueue;
@@ -49,6 +51,8 @@
   } );
 }
 
+#pragma mark - Capture Session
+
 - (void)setupCaptureSession
 {
   if ( _captureSession ) {
@@ -70,11 +74,11 @@
   [videoOut setSampleBufferDelegate:self queue:_videoDataOutputQueue];
   videoOut.alwaysDiscardsLateVideoFrames = NO;
   [_captureSession addOutput:videoOut];
+  _videoConnection = [videoOut connectionWithMediaType:AVMediaTypeVideo];
 
-//  _videoConnection = [videoOut connectionWithMediaType:AVMediaTypeVideo];
   // Setup the capture session quality level or bitrate
   _captureSession.sessionPreset = AVCaptureSessionPresetHigh;
-  
+
   // Use fixed frame rate
   CMTime frameDuration = CMTimeMake( 1, 30 );
   NSError *error = nil;
@@ -88,6 +92,41 @@
   }
   
   return;
+}
+
+#pragma mark - Capture Pipeline
+
+- (void)setupVideoPipelineWithInputFormatDescription:(CMFormatDescriptionRef)inputFormatDescription
+{
+  NSLog( @"-[%@ %@] called", [self class], NSStringFromSelector(_cmd) );
+  self.outputVideoFormatDescription = inputFormatDescription;
+}
+
+- (void)captureOutput:(AVCaptureOutput *)captureOutput didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection
+{
+  CMFormatDescriptionRef formatDescription = CMSampleBufferGetFormatDescription( sampleBuffer );
+  
+  if ( connection == _videoConnection )
+  {
+    if ( self.outputVideoFormatDescription == NULL ) {
+      // Don't render the first sample buffer.
+      // This gives us one frame interval (33ms at 30fps) for setupVideoPipelineWithInputFormatDescription: to complete.
+      // Ideally this would be done asynchronously to ensure frames don't back up on slower devices.
+      [self setupVideoPipelineWithInputFormatDescription:formatDescription];
+    }
+  }
+}
+
+- (void)startRendering
+{
+  if ( _rendering == YES ) {
+    return;
+  }
+  // Create preview layer with captureSession
+  AVCaptureVideoPreviewLayer *previewLayer = [AVCaptureVideoPreviewLayer layerWithSession:_captureSession];
+  [previewLayer setVideoGravity:AVLayerVideoGravityResizeAspectFill];
+  [_delegate startRendering:previewLayer];
+  _rendering = YES;
 }
 
 @end

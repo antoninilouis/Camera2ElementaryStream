@@ -15,13 +15,29 @@
                     <view key="view" contentMode="scaleToFill" id="j6N-gN-WbE">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
-                        <viewLayoutGuide key="safeArea" id="Uhb-lq-NhN"/>
+                        <subviews>
+                            <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="0mo-UG-uoo">
+                                <rect key="frame" x="161.5" y="433" width="91" height="30"/>
+                                <state key="normal" title="Start Camera"/>
+                                <connections>
+                                    <action selector="toggleRendering:" destination="2aV-1Z-rBP" eventType="touchUpInside" id="EYx-0I-PRx"/>
+                                </connections>
+                            </button>
+                        </subviews>
+                        <viewLayoutGuide key="safeArea" id="qzc-lj-Qxu"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
+                        <constraints>
+                            <constraint firstItem="0mo-UG-uoo" firstAttribute="centerY" secondItem="j6N-gN-WbE" secondAttribute="centerY" id="OLJ-0b-jEJ"/>
+                            <constraint firstItem="0mo-UG-uoo" firstAttribute="centerX" secondItem="j6N-gN-WbE" secondAttribute="centerX" id="VMQ-bA-EFV"/>
+                        </constraints>
                     </view>
+                    <connections>
+                        <outlet property="recordButton" destination="0mo-UG-uoo" id="LCn-Yt-dWW"/>
+                    </connections>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="Upt-tM-XgT" userLabel="First Responder" customClass="UIResponder" sceneMemberID="firstResponder"/>
             </objects>
-            <point key="canvasLocation" x="-304" y="88"/>
+            <point key="canvasLocation" x="-304.34782608695656" y="87.723214285714278"/>
         </scene>
     </scenes>
     <resources>

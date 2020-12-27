@@ -2,6 +2,9 @@
 <Workspace
    version = "1.0">
    <FileRef
-      location = "self:/Users/lantonini/Workspace/chlorine-app/Camera2ElementalStream/Camera2ElementaryStream.xcodeproj">
+      location = "group:/Users/lantonini/Workspace/chlorine-app/Camera2ElementaryStream/Classes/Camera2ElementaryStreamApplicationDelegate.h">
+   </FileRef>
+   <FileRef
+      location = "self:">
    </FileRef>
 </Workspace>
