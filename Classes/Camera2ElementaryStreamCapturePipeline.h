@@ -9,6 +9,7 @@
 #define Camera2ElementaryStreamCapturePipeline_h
 
 #import <AVFoundation/AVFoundation.h>
+#import <VideoToolbox/VideoToolbox.h>
 
 @protocol Camera2ElementaryStreamCapturePipelineDelegate
 @required
@@ -24,7 +25,9 @@
 
 - (void)startRendering;
 
+// Because we specify __attribute__((NSObject)) ARC will manage the lifetime of the backing ivars even though they are CF types.
 @property(nonatomic, strong) __attribute__((NSObject)) CMFormatDescriptionRef outputVideoFormatDescription;
+@property BOOL testBlockWriting;
 
 @end
 

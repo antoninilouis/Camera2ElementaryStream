@@ -15,6 +15,7 @@
 		2E9C59522593F25A006623C9 /* Camera2ElementaryStreamViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 2E9C59512593F25A006623C9 /* Camera2ElementaryStreamViewController.m */; };
 		2E9C59562593F38E006623C9 /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 2E9C59552593F38E006623C9 /* Main.storyboard */; };
 		2EB2E6372593EA7700C3844E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2EB2E60C2593EA7700C3844E /* Assets.xcassets */; };
+		2EDC564C2598CECD0099B6B2 /* VideoToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2EDC564B2598CECD0099B6B2 /* VideoToolbox.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,6 +32,7 @@
 		2EB2E60C2593EA7700C3844E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		2EB2E6112593EA7700C3844E /* Camera2ElementaryStream.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Camera2ElementaryStream.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2EB2E6142593EA7700C3844E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		2EDC564B2598CECD0099B6B2 /* VideoToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = VideoToolbox.framework; path = System/Library/Frameworks/VideoToolbox.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -40,6 +42,7 @@
 			files = (
 				2E9C59432593EED3006623C9 /* Foundation.framework in Frameworks */,
 				2E9C59462593EF40006623C9 /* UIKit.framework in Frameworks */,
+				2EDC564C2598CECD0099B6B2 /* VideoToolbox.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -49,6 +52,7 @@
 		2E9C59412593EED3006623C9 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				2EDC564B2598CECD0099B6B2 /* VideoToolbox.framework */,
 				2E9C59452593EF40006623C9 /* UIKit.framework */,
 				2E9C59422593EED3006623C9 /* Foundation.framework */,
 			);
