@@ -21,13 +21,10 @@
 
 - (instancetype)initWithDelegate:(id<Camera2ElementaryStreamCapturePipelineDelegate>)delegate callbackQueue:(dispatch_queue_t)queue;
 
-- (void)startRunning;
-
-- (void)startRendering;
+- (void)start;
 
 // Because we specify __attribute__((NSObject)) ARC will manage the lifetime of the backing ivars even though they are CF types.
 @property(nonatomic, strong) __attribute__((NSObject)) CMFormatDescriptionRef outputVideoFormatDescription;
-@property BOOL testBlockWriting;
 
 @end
 

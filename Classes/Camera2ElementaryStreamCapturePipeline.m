@@ -15,22 +15,17 @@
   AVCaptureSession *_captureSession;
   AVCaptureDevice *_videoDevice;
   AVCaptureConnection *_videoConnection;
-  BOOL _running;
-  BOOL _rendering;
 
-  dispatch_queue_t _sessionQueue;
   dispatch_queue_t _videoDataOutputQueue;
   __weak id<Camera2ElementaryStreamCapturePipelineDelegate> _delegate;
   dispatch_queue_t _delegateCallbackQueue;
 
   VTCompressionSessionRef _compressionSession;
+  NSFileHandle *_fileHandle;  
 }
 
 - (instancetype)initWithDelegate:(id<Camera2ElementaryStreamCapturePipelineDelegate>)delegate callbackQueue:(dispatch_queue_t)queue {
   self = [ super init ];
-
-  // Initialize serial queue on which capture session runs
-  _sessionQueue = dispatch_queue_create( "camera2elementarystream.capturepipeline.session", DISPATCH_QUEUE_SERIAL );
 
   // Initialize serial queue on which sample buffer delegate callback is called
   _videoDataOutputQueue = dispatch_queue_create( "camera2elementarystream.capturepipeline.video", DISPATCH_QUEUE_SERIAL );
@@ -44,17 +39,17 @@
   return self;
 }
 
-- (void)startRunning
+- (void)start
 {
-  dispatch_sync( _sessionQueue, ^{
-    [self setupCaptureSession];
-    [self setupCompressionSession];
+  [self setupCaptureSession];
+  [self setupCompressionSession];
+  [self setupRecording];
+  [_captureSession startRunning];
 
-    if ( _captureSession ) {
-      [_captureSession startRunning];
-      _running = YES;
-    }
-  } );
+  // Create preview layer with captureSession
+  AVCaptureVideoPreviewLayer *previewLayer = [AVCaptureVideoPreviewLayer layerWithSession:_captureSession];
+  [previewLayer setVideoGravity:AVLayerVideoGravityResizeAspectFill];
+  [_delegate startRendering:previewLayer];
 }
 
 #pragma mark - Capture Session
@@ -108,8 +103,7 @@
 {
   CMVideoDimensions videoDimensions = CMVideoFormatDescriptionGetDimensions( self.outputVideoFormatDescription );
 
-  // Do not forget to call VTCompressionSessionInvalidate to invalidate it and CFRelease to free its memory
-  VTCompressionSessionCreate( NULL, videoDimensions.width, videoDimensions.width, kCMVideoCodecType_H264, NULL, NULL, NULL, &compressionOutputCallback, (__bridge void *)(self), &_compressionSession );
+  VTCompressionSessionCreate( NULL, videoDimensions.width, videoDimensions.height, kCMVideoCodecType_H264, NULL, NULL, NULL, &compressionOutputCallback, (__bridge void *)(self), &_compressionSession );
   VTSessionSetProperty( _compressionSession, kVTCompressionPropertyKey_RealTime, kCFBooleanTrue );
 }
 
@@ -195,46 +189,9 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
     // Move to the next NAL unit in the block buffer
     bufferOffset += AVCCHeaderLength + NALUnitLength;
   }
-  //Before decompress we will write elementry data to .h264 file in document directory
-  //you can get that file using iTunes => Apps = > FileSharing => AVEncoderDemo
-//  [FileLogger logToFile:elementaryStream];
 
-  NSString *docDir = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES)[0];
-  NSString *dirName = [docDir stringByAppendingPathComponent:@"Camera2ElementaryStream"];
-
-  NSFileManager *fm = [NSFileManager defaultManager];
-
-  // Create directory if it doesn't exist
-  if(![fm fileExistsAtPath:dirName])
-  {
-      if([fm createDirectoryAtPath:dirName withIntermediateDirectories:YES attributes:nil error:nil])
-          NSLog(@"Directory Created");
-      else
-          NSLog(@"Directory Creation Failed");
-  }
-
-  NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
-  [formatter setDateFormat:@"dd-MM-yyyy_HH-mm"];
-
-  NSDate *currentDate = [NSDate date];
-  NSString *dateString = [formatter stringFromDate:currentDate];
-  
-  NSString *fileName = [docDir stringByAppendingPathComponent: [NSString stringWithFormat:@"%@%@%@", @"test_", dateString, @".h264"]];
-    
-  // Create file if it doesn't exist
-  if(![fm fileExistsAtPath:fileName])
-  {
-    if([fm createFileAtPath:fileName contents: nil attributes:nil])
-          NSLog(@"File Created");
-      else
-          NSLog(@"File Creation Failed");
-  }
-  
-  if (!((__bridge Camera2ElementaryStreamCapturePipeline *)outputCallbackRefCon).testBlockWriting)
-  {
-    [elementaryStream writeToFile:fileName atomically:NO];
-    ((__bridge Camera2ElementaryStreamCapturePipeline *)outputCallbackRefCon).testBlockWriting = YES;
-  }
+  // Flush all content to file
+  [((__bridge Camera2ElementaryStreamCapturePipeline *)outputCallbackRefCon)->_fileHandle writeData: [NSData dataWithBytes:[elementaryStream bytes] length:[elementaryStream length]]];
 }
 
 - (void)teardownCompressionSession
@@ -245,39 +202,32 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
 
 #pragma mark - Capture Pipeline
 
-- (void)setupVideoPipelineWithInputFormatDescription:(CMFormatDescriptionRef)inputFormatDescription
-{
-  NSLog( @"-[%@ %@] called", [self class], NSStringFromSelector(_cmd) );
-  self.outputVideoFormatDescription = inputFormatDescription;
-}
-
 - (void)captureOutput:(AVCaptureOutput *)captureOutput didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection
 {
-//  CMFormatDescriptionRef formatDescription = CMSampleBufferGetFormatDescription( sampleBuffer );
-//
-//  if ( connection == _videoConnection )
-//  {
-//    if ( self.outputVideoFormatDescription == NULL ) {
-//      // Don't render the first sample buffer.
-//      // This gives us one frame interval (33ms at 30fps) for setupVideoPipelineWithInputFormatDescription: to complete.
-//      // Ideally this would be done asynchronously to ensure frames don't back up on slower devices.
-//      [self setupVideoPipelineWithInputFormatDescription:formatDescription];
-//    }
-//  }
   CVImageBufferRef imageBuffer = CMSampleBufferGetImageBuffer( sampleBuffer );
   VTCompressionSessionEncodeFrame( _compressionSession, imageBuffer, CMSampleBufferGetPresentationTimeStamp( sampleBuffer ), CMSampleBufferGetDuration( sampleBuffer ), NULL, NULL, NULL );
 }
 
-- (void)startRendering
+- (void)setupRecording
 {
-  if ( _rendering == YES ) {
-    return;
+  NSFileManager *fm = [NSFileManager defaultManager];
+  NSString *docDir = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES)[0];
+  NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+  [formatter setDateFormat:@"dd-MM-yyyy_HH-mm"];
+  NSDate *currentDate = [NSDate date];
+  NSString *dateString = [formatter stringFromDate:currentDate];
+  NSString *h264file = [docDir stringByAppendingPathComponent: [NSString stringWithFormat:@"%@%@%@", @"test_", dateString, @".h264"]];
+    
+  // Create file if it doesn't exist
+  if(![fm fileExistsAtPath:h264file])
+  {
+    if([fm createFileAtPath:h264file contents: nil attributes:nil])
+          NSLog(@"File Created");
+      else
+          NSLog(@"File Creation Failed");
   }
-  // Create preview layer with captureSession
-  AVCaptureVideoPreviewLayer *previewLayer = [AVCaptureVideoPreviewLayer layerWithSession:_captureSession];
-  [previewLayer setVideoGravity:AVLayerVideoGravityResizeAspectFill];
-  [_delegate startRendering:previewLayer];
-  _rendering = YES;
+  
+  _fileHandle = [NSFileHandle fileHandleForWritingAtPath:h264file];
 }
 
 @end

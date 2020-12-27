@@ -25,8 +25,7 @@
 - (IBAction)toggleRendering:(id)sender
 {
   [self.recordButton setTitle:@"Stop" forState:UIControlStateNormal];
-  [_capturePipeline startRunning];
-  [_capturePipeline startRendering];
+  [_capturePipeline start];
 }
 
 #pragma mark - Camera2ElementaryStreamCapturePipelineDelegate
