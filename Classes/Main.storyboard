@@ -17,8 +17,9 @@
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="0mo-UG-uoo">
-                                <rect key="frame" x="161.5" y="433" width="91" height="30"/>
-                                <state key="normal" title="Start Camera"/>
+                                <rect key="frame" x="160.5" y="433" width="93" height="30"/>
+                                <fontDescription key="fontDescription" name=".AppleSystemUIFont" family=".AppleSystemUIFont" pointSize="15"/>
+                                <state key="normal" title="Start Capture"/>
                                 <connections>
                                     <action selector="toggleCapturing:" destination="2aV-1Z-rBP" eventType="touchUpInside" id="EYx-0I-PRx"/>
                                 </connections>
