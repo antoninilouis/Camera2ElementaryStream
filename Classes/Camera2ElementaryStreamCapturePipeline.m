@@ -115,7 +115,7 @@
 
   VTCompressionSessionCreate( NULL, videoDimensions.width, videoDimensions.height, kCMVideoCodecType_H264, NULL, NULL, NULL, &compressionOutputCallback, (__bridge void *)(self), &_compressionSession );
   VTSessionSetProperty( _compressionSession, kVTCompressionPropertyKey_RealTime, kCFBooleanTrue );
-  // todo: add call to prepare compression session
+  VTCompressionSessionPrepareToEncodeFrames( _compressionSession );
 }
 
 void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefCon, OSStatus status, VTEncodeInfoFlags infoFlags, CMSampleBufferRef sampleBuffer)
@@ -131,15 +131,15 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
   // Find out if the sample buffer contains an I-Frame.
   // If so we will write the SPS and PPS NAL units to the elementary stream.
   BOOL isIFrame = NO;
-  CFArrayRef attachmentsArray = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, 0);
+  CFArrayRef attachmentsArray = CMSampleBufferGetSampleAttachmentsArray( sampleBuffer, 0 );
   if (CFArrayGetCount(attachmentsArray)) {
       CFBooleanRef notSync;
-      CFDictionaryRef dict = CFArrayGetValueAtIndex(attachmentsArray, 0);
-      BOOL keyExists = CFDictionaryGetValueIfPresent(dict,
+      CFDictionaryRef dict = CFArrayGetValueAtIndex( attachmentsArray, 0 );
+      BOOL keyExists = CFDictionaryGetValueIfPresent( dict,
                                                      kCMSampleAttachmentKey_NotSync,
-                                                     (const void **)&notSync);
+                                                     (const void **)&notSync );
       // An I-Frame is a sync frame
-      isIFrame = !keyExists || !CFBooleanGetValue(notSync);
+      isIFrame = !keyExists || !CFBooleanGetValue( notSync );
   }
  
   // This is the start code that we will write to
@@ -149,24 +149,24 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
  
   // Write the SPS and PPS NAL units to the elementary stream before every I-Frame
   if (isIFrame) {
-      CMFormatDescriptionRef description = CMSampleBufferGetFormatDescription(sampleBuffer);
+      CMFormatDescriptionRef description = CMSampleBufferGetFormatDescription( sampleBuffer );
      
       // Find out how many parameter sets there are
       size_t numberOfParameterSets;
-      CMVideoFormatDescriptionGetH264ParameterSetAtIndex(description,
+      CMVideoFormatDescriptionGetH264ParameterSetAtIndex( description,
                                                          0, NULL, NULL,
                                                          &numberOfParameterSets,
-                                                         NULL);
+                                                         NULL );
      
       // Write each parameter set to the elementary stream
       for (int i = 0; i < numberOfParameterSets; i++) {
           const uint8_t *parameterSetPointer;
           size_t parameterSetLength;
-          CMVideoFormatDescriptionGetH264ParameterSetAtIndex(description,
+          CMVideoFormatDescriptionGetH264ParameterSetAtIndex( description,
                                                              i,
                                                              &parameterSetPointer,
                                                              &parameterSetLength,
-                                                             NULL, NULL);
+                                                             NULL, NULL );
          
           // Write the parameter set to the elementary stream
           [elementaryStream appendBytes:startCode length:startCodeLength];
@@ -177,11 +177,11 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
   // Get a pointer to the raw AVCC NAL unit data in the sample buffer
   size_t blockBufferLength;
   uint8_t *bufferDataPointer = NULL;
-  CMBlockBufferGetDataPointer(CMSampleBufferGetDataBuffer(sampleBuffer),
+  CMBlockBufferGetDataPointer( CMSampleBufferGetDataBuffer( sampleBuffer ),
                               0,
                               NULL,
                               &blockBufferLength,
-                              (char **)&bufferDataPointer);
+                              (char **)&bufferDataPointer );
  
   // Loop through all the NAL units in the block buffer
   // and write them to the elementary stream with
@@ -192,7 +192,7 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
     // Read the NAL unit length
     uint32_t NALUnitLength = 0; memcpy(&NALUnitLength, bufferDataPointer + bufferOffset, AVCCHeaderLength);
     // Convert the length value from Big-endian to Little-endian
-    NALUnitLength = CFSwapInt32BigToHost(NALUnitLength);
+    NALUnitLength = CFSwapInt32BigToHost( NALUnitLength );
     // Write start code to the elementary stream
     [elementaryStream appendBytes:startCode length:startCodeLength];
     // Write the NAL unit without the AVCC length header to the elementary stream
