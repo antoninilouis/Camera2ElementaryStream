@@ -47,16 +47,18 @@
   previewLayer.name = @"previewLayer";
 
   // Add preview layer into the view's layer hierarchy.
-  [self.view.layer insertSublayer:previewLayer above:self.view.layer];
+  [self.view.layer addSublayer:previewLayer];
 }
 
 - (void)stopRendering
 {
   NSArray *sublayers = [self.view.layer sublayers];
-  for (CALayer *layer in sublayers) {
-    if ([[layer name] compare:@"previewLayer"] == YES)
+  for (__strong CALayer *layer in sublayers) {
+    if ([[layer name] isEqualToString:@"previewLayer"] == YES)
     {
+      [layer setHidden:YES];
       [layer removeFromSuperlayer];
+      layer = nil;
     }
   }
 }

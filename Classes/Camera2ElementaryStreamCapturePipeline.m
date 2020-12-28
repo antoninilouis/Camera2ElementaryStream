@@ -44,16 +44,15 @@
   [self setupCaptureSession];
   [self setupCompressionSession];
   [self setupRecording];
-  [_captureSession startRunning];
   [_delegate startRendering:_captureSession];
+  [_captureSession startRunning];
 }
 
 - (void)stop
 {
-  [_captureSession stopRunning];
-  VTCompressionSessionCompleteFrames(_compressionSession, kCMTimeZero);
+  [self teardownCaptureSession];
   [self teardownCompressionSession];
-  [self stopRecording];
+  [self teardownRecording];
   [_delegate stopRendering];
 }
 
@@ -102,6 +101,12 @@
   return;
 }
 
+- (void)teardownCaptureSession
+{
+  [_captureSession stopRunning];
+  _captureSession = nil;
+}
+
 #pragma mark - Compression Session
 
 - (void)setupCompressionSession
@@ -110,6 +115,7 @@
 
   VTCompressionSessionCreate( NULL, videoDimensions.width, videoDimensions.height, kCMVideoCodecType_H264, NULL, NULL, NULL, &compressionOutputCallback, (__bridge void *)(self), &_compressionSession );
   VTSessionSetProperty( _compressionSession, kVTCompressionPropertyKey_RealTime, kCFBooleanTrue );
+  // todo: add call to prepare compression session
 }
 
 void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefCon, OSStatus status, VTEncodeInfoFlags infoFlags, CMSampleBufferRef sampleBuffer)
@@ -201,6 +207,7 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
 
 - (void)teardownCompressionSession
 {
+  VTCompressionSessionCompleteFrames(_compressionSession, kCMTimeZero);
   VTCompressionSessionInvalidate(_compressionSession);
   CFRelease(_compressionSession);
 }
@@ -235,10 +242,10 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
   _fileHandle = [NSFileHandle fileHandleForWritingAtPath:h264file];
 }
 
-- (void)stopRecording
+- (void)teardownRecording
 {
   [_fileHandle closeFile];
-  _fileHandle = NULL;
+  _fileHandle = nil;
 }
 
 @end
