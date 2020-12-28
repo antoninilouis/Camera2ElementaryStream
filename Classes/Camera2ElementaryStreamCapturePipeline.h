@@ -13,7 +13,8 @@
 
 @protocol Camera2ElementaryStreamCapturePipelineDelegate
 @required
-- (void)startRendering:(AVCaptureVideoPreviewLayer *)previewLayer;
+- (void)startRendering:(AVCaptureSession *)captureSession;
+- (void)stopRendering;
 
 @end
 
@@ -21,7 +22,9 @@
 
 - (instancetype)initWithDelegate:(id<Camera2ElementaryStreamCapturePipelineDelegate>)delegate callbackQueue:(dispatch_queue_t)queue;
 
+// Pipeline lifecycle
 - (void)start;
+- (void)stop;
 
 // Because we specify __attribute__((NSObject)) ARC will manage the lifetime of the backing ivars even though they are CF types.
 @property(nonatomic, strong) __attribute__((NSObject)) CMFormatDescriptionRef outputVideoFormatDescription;

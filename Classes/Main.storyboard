@@ -20,7 +20,7 @@
                                 <rect key="frame" x="161.5" y="433" width="91" height="30"/>
                                 <state key="normal" title="Start Camera"/>
                                 <connections>
-                                    <action selector="toggleRendering:" destination="2aV-1Z-rBP" eventType="touchUpInside" id="EYx-0I-PRx"/>
+                                    <action selector="toggleCapturing:" destination="2aV-1Z-rBP" eventType="touchUpInside" id="EYx-0I-PRx"/>
                                 </connections>
                             </button>
                         </subviews>

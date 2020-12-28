@@ -10,6 +10,7 @@
 
 @implementation Camera2ElementaryStreamViewController {
   Camera2ElementaryStreamCapturePipeline *_capturePipeline;
+  BOOL _capturing;
 }
 
 #pragma mark - View lifecycle
@@ -22,19 +23,42 @@
 
 #pragma mark - UI
 
-- (IBAction)toggleRendering:(id)sender
+- (IBAction)toggleCapturing:(id)sender
 {
-  [self.recordButton setTitle:@"Stop" forState:UIControlStateNormal];
-  [_capturePipeline start];
+  _capturing = !_capturing;
+  
+  if (_capturing) {
+    [self.recordButton setTitle:@"Stop" forState:UIControlStateNormal];
+    [_capturePipeline start];
+  } else {
+    [self.recordButton setTitle:@"Start Capture" forState:UIControlStateNormal];
+    [_capturePipeline stop];
+  }
 }
 
 #pragma mark - Camera2ElementaryStreamCapturePipelineDelegate
 
-- (void)startRendering:(AVCaptureVideoPreviewLayer *)previewLayer
+- (void)startRendering:(AVCaptureSession *)captureSession
 {
-  // Add preview layer into the view's layer hierarchy.
+  // Create preview layer with captureSession
+  AVCaptureVideoPreviewLayer *previewLayer = [AVCaptureVideoPreviewLayer layerWithSession:captureSession];
+  [previewLayer setVideoGravity:AVLayerVideoGravityResizeAspectFill];
   previewLayer.frame = self.view.bounds;
-  [self.view.layer addSublayer:previewLayer];
+  previewLayer.name = @"previewLayer";
+
+  // Add preview layer into the view's layer hierarchy.
+  [self.view.layer insertSublayer:previewLayer above:self.view.layer];
+}
+
+- (void)stopRendering
+{
+  NSArray *sublayers = [self.view.layer sublayers];
+  for (CALayer *layer in sublayers) {
+    if ([[layer name] compare:@"previewLayer"] == YES)
+    {
+      [layer removeFromSuperlayer];
+    }
+  }
 }
 
 @end

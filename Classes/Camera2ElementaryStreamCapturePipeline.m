@@ -45,11 +45,16 @@
   [self setupCompressionSession];
   [self setupRecording];
   [_captureSession startRunning];
+  [_delegate startRendering:_captureSession];
+}
 
-  // Create preview layer with captureSession
-  AVCaptureVideoPreviewLayer *previewLayer = [AVCaptureVideoPreviewLayer layerWithSession:_captureSession];
-  [previewLayer setVideoGravity:AVLayerVideoGravityResizeAspectFill];
-  [_delegate startRendering:previewLayer];
+- (void)stop
+{
+  [_captureSession stopRunning];
+  VTCompressionSessionCompleteFrames(_compressionSession, kCMTimeZero);
+  [self teardownCompressionSession];
+  [self stopRecording];
+  [_delegate stopRendering];
 }
 
 #pragma mark - Capture Session
@@ -228,6 +233,12 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
   }
   
   _fileHandle = [NSFileHandle fileHandleForWritingAtPath:h264file];
+}
+
+- (void)stopRecording
+{
+  [_fileHandle closeFile];
+  _fileHandle = NULL;
 }
 
 @end
