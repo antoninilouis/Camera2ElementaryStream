@@ -9,16 +9,15 @@
 
 /*
   Manages the capture session
-  Uses formal delegation for capture session lifecycle
  */
 @implementation Camera2ElementaryStreamCapturePipeline {
+  __weak id<Camera2ElementaryStreamCapturePipelineDelegate> _delegate;
+  dispatch_queue_t _delegateCallbackQueue;
+
   AVCaptureSession *_captureSession;
   AVCaptureDevice *_videoDevice;
   AVCaptureConnection *_videoConnection;
-
   dispatch_queue_t _videoDataOutputQueue;
-  __weak id<Camera2ElementaryStreamCapturePipelineDelegate> _delegate;
-  dispatch_queue_t _delegateCallbackQueue;
 
   VTCompressionSessionRef _compressionSession;
   NSFileHandle *_fileHandle;  
@@ -27,15 +26,15 @@
 - (instancetype)initWithDelegate:(id<Camera2ElementaryStreamCapturePipelineDelegate>)delegate callbackQueue:(dispatch_queue_t)queue {
   self = [ super init ];
 
+  _delegate = delegate;
+
+  // Queue passed by client for asynchronous error handling
+  _delegateCallbackQueue = queue;
+
   // Initialize serial queue on which sample buffer delegate callback is called
   _videoDataOutputQueue = dispatch_queue_create( "camera2elementarystream.capturepipeline.video", DISPATCH_QUEUE_SERIAL );
   dispatch_set_target_queue( _videoDataOutputQueue, dispatch_get_global_queue( DISPATCH_QUEUE_PRIORITY_HIGH, 0 ) );
-
-  _delegate = delegate;
   
-  // Queue passed by client for asynchronous errors
-  _delegateCallbackQueue = queue;
-
   return self;
 }
 

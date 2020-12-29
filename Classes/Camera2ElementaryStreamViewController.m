@@ -25,6 +25,12 @@ NSString * const STOP_CAPTURE_BUTTON_TITLE = @"Start Capture";
   _capturePipeline = [[Camera2ElementaryStreamCapturePipeline alloc] initWithDelegate:self callbackQueue:dispatch_get_main_queue()];
 }
 
+- (void)viewWillDisappear:(BOOL)animated
+{
+  // Not used for the moment
+  NSLog( @"View will disappear" );
+}
+
 #pragma mark - UI
 
 - (IBAction)toggleCapturing:(id)sender

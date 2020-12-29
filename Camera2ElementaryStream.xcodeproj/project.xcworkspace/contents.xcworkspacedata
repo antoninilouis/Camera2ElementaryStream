@@ -2,9 +2,6 @@
 <Workspace
    version = "1.0">
    <FileRef
-      location = "group:../../louisantonini.Camera2ElementaryStream 2020-12-27 17:45.38.372.xcappdata">
-   </FileRef>
-   <FileRef
       location = "self:">
    </FileRef>
 </Workspace>
