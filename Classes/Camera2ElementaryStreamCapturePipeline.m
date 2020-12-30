@@ -7,6 +7,8 @@
 
 #import "Camera2ElementaryStreamCapturePipeline.h"
 
+#include <libavformat/avformat.h>
+
 /*
   Manages the capture session
  */
@@ -112,7 +114,7 @@
 {
   CMVideoDimensions videoDimensions = CMVideoFormatDescriptionGetDimensions( self.outputVideoFormatDescription );
 
-  VTCompressionSessionCreate( NULL, videoDimensions.width, videoDimensions.height, kCMVideoCodecType_H264, NULL, NULL, NULL, &compressionOutputCallback, (__bridge void *)(self), &_compressionSession );
+  VTCompressionSessionCreate( NULL, videoDimensions.width, videoDimensions.height, kCMVideoCodecType_H264, NULL, NULL, NULL, &compressionOutputCallback, (__bridge void *) self, &_compressionSession );
   VTSessionSetProperty( _compressionSession, kVTCompressionPropertyKey_RealTime, kCFBooleanTrue );
   VTCompressionSessionPrepareToEncodeFrames( _compressionSession );
 }
@@ -200,8 +202,13 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
     bufferOffset += AVCCHeaderLength + NALUnitLength;
   }
 
+  Camera2ElementaryStreamCapturePipeline *this = (__bridge Camera2ElementaryStreamCapturePipeline *)outputCallbackRefCon;
+  
   // Flush all content to file
-  [((__bridge Camera2ElementaryStreamCapturePipeline *)outputCallbackRefCon)->_fileHandle writeData: [NSData dataWithBytes:[elementaryStream bytes] length:[elementaryStream length]]];
+  [this->_fileHandle writeData: [NSData dataWithBytes:[elementaryStream bytes] length:[elementaryStream length]]];
+  
+  // Mux content into a Transport Stream
+  [this appendElementaryStreamToTransportStream:elementaryStream];
 }
 
 - (void)teardownCompressionSession
@@ -209,6 +216,86 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
   VTCompressionSessionCompleteFrames(_compressionSession, kCMTimeZero);
   VTCompressionSessionInvalidate(_compressionSession);
   CFRelease(_compressionSession);
+}
+
+#pragma mark - MPEG-TS
+
+/*
+ Starting from what I understand of the usage of ffmpeg library for muxing
+ The global problematic is related to IO, and how set ffmpeg output to memory
+ */
+- (void)setupMuxing
+{
+  AVFormatContext *formatContext;
+  AVOutputFormat *oformat;
+
+  /*
+   From documentation in avformat.h:
+   At the beginning of the muxing process, the caller must first call
+   avformat_alloc_context() to create a muxing context. The caller then sets up
+   the muxer by filling the various fields in this context
+   */
+  
+  formatContext = avformat_alloc_context();
+
+  // output format (mpegts)
+  oformat = av_guess_format("mpegts", NULL, NULL);
+  formatContext->oformat = oformat;
+
+  /*
+   From documentation in avformat.h:
+   In some cases you might want to preallocate an AVFormatContext yourself with
+   avformat_alloc_context() and do some tweaking on it before passing it to
+   avformat_open_input(). One such case is when you want to use custom functions
+   for reading input data instead of lavf internal I/O layer.
+   To do that, create your own AVIOContext with avio_alloc_context(), passing
+   your reading callbacks to it. Then set the @em pb field of your
+   AVFormatContext to newly created AVIOContext.
+   */
+  
+  unsigned char *buffer;
+  const size_t AVIO_BUFFER_SIZE = 4096;
+  AVIOContext *avio;
+
+  buffer = av_malloc(AVIO_BUFFER_SIZE);
+  avio = avio_alloc_context(buffer, AVIO_BUFFER_SIZE, 0, NULL, &rPacket, &wPacket, NULL);
+  
+  // bytestream IO context
+  formatContext->pb = avio;
+
+  /*
+   From documentation in avformat.h:
+   - Unless the format is of the AVFMT_NOSTREAMS type, at least one stream must
+     be created with the avformat_new_stream() function. The caller should fill
+     the @ref AVStream.codecpar "stream codec parameters" information, such as the
+     codec @ref AVCodecParameters.codec_type "type", @ref AVCodecParameters.codec_id
+     "id" and other parameters (e.g. width / height, the pixel or sample format,
+     etc.) as known. The @ref AVStream.time_base "stream timebase" should
+     be set to the timebase that the caller desires to use for this stream (note
+     that the timebase actually used by the muxer can be different, as will be
+     described later).
+   */
+  
+  AVStream *outputStream;
+  
+  outputStream = avformat_new_stream(formatContext, NULL);
+  
+}
+
+int rPacket(void *opaque, uint8_t *buf, int buf_size)
+{
+  return 1;
+}
+
+int wPacket(void *opaque, uint8_t *buf, int buf_size)
+{
+  return 1;
+}
+
+
+- (void)appendElementaryStreamToTransportStream:(NSData *)elementaryStream
+{
+  
 }
 
 #pragma mark - Capture Pipeline
