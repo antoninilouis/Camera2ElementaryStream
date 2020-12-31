@@ -5,9 +5,9 @@
 //  Created by Antonini Louis on 2020-12-25.
 //
 
-#import "Camera2ElementaryStreamCapturePipeline.h"
+#import <libavformat/avformat.h>
 
-#include <libavformat/avformat.h>
+#import "Camera2ElementaryStreamCapturePipeline.h"
 
 /*
   Manages the capture session
@@ -45,6 +45,7 @@
   [self setupCaptureSession];
   [self setupCompressionSession];
   [self setupRecording];
+  [self setupMuxing];
   [_delegate startRendering:_captureSession];
   [_captureSession startRunning];
 }
@@ -230,6 +231,13 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
   AVOutputFormat *oformat;
 
   /*
+   Does the job despite being flagged as deprecated
+   Must be replaced by av_demuxer_iterate/av_muxer_iterate()
+   */
+  
+  av_register_all();
+  
+  /*
    From documentation in avformat.h:
    At the beginning of the muxing process, the caller must first call
    avformat_alloc_context() to create a muxing context. The caller then sets up
@@ -255,12 +263,13 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
   
   unsigned char *buffer;
   const size_t AVIO_BUFFER_SIZE = 4096;
+  const size_t STREAM_FRAME_RATE = 30;
   AVIOContext *avio;
 
   buffer = av_malloc(AVIO_BUFFER_SIZE);
-  avio = avio_alloc_context(buffer, AVIO_BUFFER_SIZE, 0, NULL, &rPacket, &wPacket, NULL);
+  avio = avio_alloc_context(buffer, AVIO_BUFFER_SIZE, 1, NULL, &rPacket, &wPacket, NULL);
   
-  // bytestream IO context
+  // bytestream IO context, used for muxer output
   formatContext->pb = avio;
 
   /*
@@ -275,23 +284,59 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
      that the timebase actually used by the muxer can be different, as will be
      described later).
    */
+
+  // Instead of creating an AVCodecContext ourselves, we use AVCodecParameters *codecpar parameter to AVStream
+  // AVCodecContext *codecContext;
+  //
+  // codecContext->codec_type  = AVMEDIA_TYPE_VIDEO;
+  // codecContext->codec_id    = AV_CODEC_ID_H264;
+  // codecContext->bit_rate    = 2000000;
+  // codecContext->width       = 1920;
+  // codecContext->height      = 1080;
+  // codecContext->gop_size    = 12;
+  // codecContext->time_base   = (AVRational){ 1, STREAM_FRAME_RATE };
   
   AVStream *outputStream;
-  
+
+  // Regarding avformat_new_stream AVCodec parameter, according to FFmpeg documentation:
+  // If non-NULL, the AVCodecContext corresponding to the new stream will be initialized to use this codec.
+  // This is needed for e.g. codec-specific defaults to be set, so codec should be provided if it is known.
+  // However the usage of codec in AVStream is deprecated so we set it to NULL
   outputStream = avformat_new_stream(formatContext, NULL);
+  outputStream->id = formatContext->nb_streams - 1;
   
+  // outputStream->time_base = codecContext->time_base;
+  
+  av_dump_format(formatContext, 0, [@"RAM" UTF8String], 1);
+  
+  int ret = avformat_write_header(formatContext, NULL);
+  
+  switch (ret) {
+    case AVSTREAM_INIT_IN_WRITE_HEADER:
+      NSLog(@"AVSTREAM_INIT_IN_WRITE_HEADER");
+      break;
+
+    case AVSTREAM_INIT_IN_INIT_OUTPUT:
+      NSLog(@"AVSTREAM_INIT_IN_INIT_OUTPUT");
+      break;
+
+    default:
+      NSLog(@"AVERROR");
+      break;
+  }
 }
 
 int rPacket(void *opaque, uint8_t *buf, int buf_size)
 {
+  NSLog(@"rPacket");
   return 1;
 }
 
 int wPacket(void *opaque, uint8_t *buf, int buf_size)
 {
+  NSLog(@"wPacket");
   return 1;
 }
-
 
 - (void)appendElementaryStreamToTransportStream:(NSData *)elementaryStream
 {
