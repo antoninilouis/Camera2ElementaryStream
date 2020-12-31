@@ -287,23 +287,22 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
 
   // Instead of creating an AVCodecContext ourselves, we use AVCodecParameters *codecpar parameter to AVStream
   // AVCodecContext *codecContext;
-  //
-  // codecContext->codec_type  = AVMEDIA_TYPE_VIDEO;
-  // codecContext->codec_id    = AV_CODEC_ID_H264;
-  // codecContext->bit_rate    = 2000000;
-  // codecContext->width       = 1920;
-  // codecContext->height      = 1080;
   // codecContext->gop_size    = 12;
   // codecContext->time_base   = (AVRational){ 1, STREAM_FRAME_RATE };
   
+  AVCodecParameters *codecParameters = avcodec_parameters_alloc();
+  codecParameters->codec_type = AVMEDIA_TYPE_VIDEO;
+  codecParameters->codec_id   = AV_CODEC_ID_H264;
+  codecParameters->bit_rate   = 2000000;
+  codecParameters->width      = 1920;
+  codecParameters->height     = 1080;
+  
   AVStream *outputStream;
 
-  // Regarding avformat_new_stream AVCodec parameter, according to FFmpeg documentation:
-  // If non-NULL, the AVCodecContext corresponding to the new stream will be initialized to use this codec.
-  // This is needed for e.g. codec-specific defaults to be set, so codec should be provided if it is known.
-  // However the usage of codec in AVStream is deprecated so we set it to NULL
+  // Usage of codec member in AVStream is deprecated so we set it to NULL
   outputStream = avformat_new_stream(formatContext, NULL);
   outputStream->id = formatContext->nb_streams - 1;
+  outputStream->codecpar = codecParameters;
   
   // outputStream->time_base = codecContext->time_base;
   
