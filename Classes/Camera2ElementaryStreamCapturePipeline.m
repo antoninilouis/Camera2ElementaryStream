@@ -10,7 +10,21 @@
 #import "Camera2ElementaryStreamCapturePipeline.h"
 
 /*
-  Manages the capture session
+ Manages the capture session
+ The data flow is the following:
+ - capture session
+ - compression session
+ - muxing into mpeg-ts
+ 
+ Each part is using a form of delegation, using protocol/delegate or callbacks
+ - the capture session uses this object as delegate on the video data output queue (serial)
+   its settings are: inputs and outputs that controll device parameters and the delegation
+   the delegate method makes calls to VTCompressionSessionEncodeFrame
+ - the compression session passes compressed frames to the compressionOutputCallback
+   its settings are: encoder used for the compression
+   the callback method makes calls to appendElementaryStreamToTransportStream
+ - the muxing "session" passes muxed packets to the wPacket callback
+   its settings are: FFmpeg format context used for the muxing
  */
 @implementation Camera2ElementaryStreamCapturePipeline {
   __weak id<Camera2ElementaryStreamCapturePipelineDelegate> _delegate;
@@ -22,7 +36,10 @@
   dispatch_queue_t _videoDataOutputQueue;
 
   VTCompressionSessionRef _compressionSession;
-  NSFileHandle *_fileHandle;  
+  NSFileHandle *_fileHandle;
+  
+  AVFormatContext *_formatContext;
+  CMSampleBufferRef firstSampleBuffer;
 }
 
 - (instancetype)initWithDelegate:(id<Camera2ElementaryStreamCapturePipelineDelegate>)delegate callbackQueue:(dispatch_queue_t)queue {
@@ -67,7 +84,10 @@
   }
   
   _captureSession = [[AVCaptureSession alloc] init];
-  
+
+  // Setup the capture session quality level or bitrate
+  _captureSession.sessionPreset = AVCaptureSessionPresetHigh;
+
   // Setup the capture session input
   AVCaptureDevice *videoDevice = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
   NSError *videoDeviceError = nil;
@@ -82,9 +102,6 @@
   videoOut.alwaysDiscardsLateVideoFrames = NO;
   [_captureSession addOutput:videoOut];
   _videoConnection = [videoOut connectionWithMediaType:AVMediaTypeVideo];
-
-  // Setup the capture session quality level or bitrate
-  _captureSession.sessionPreset = AVCaptureSessionPresetHigh;
 
   // Use fixed frame rate
   CMTime frameDuration = CMTimeMake( 1, 30 );
@@ -205,11 +222,8 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
 
   Camera2ElementaryStreamCapturePipeline *this = (__bridge Camera2ElementaryStreamCapturePipeline *)outputCallbackRefCon;
   
-  // Flush all content to file
-  [this->_fileHandle writeData: [NSData dataWithBytes:[elementaryStream bytes] length:[elementaryStream length]]];
-  
   // Mux content into a Transport Stream
-  [this appendElementaryStreamToTransportStream:elementaryStream];
+  [this appendElementaryStreamToTransportStream:elementaryStream fromSampleBuffer:sampleBuffer];
 }
 
 - (void)teardownCompressionSession
@@ -227,7 +241,6 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
  */
 - (void)setupMuxing
 {
-  AVFormatContext *formatContext;
   AVOutputFormat *oformat;
 
   /*
@@ -244,11 +257,11 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
    the muxer by filling the various fields in this context
    */
   
-  formatContext = avformat_alloc_context();
+  _formatContext = avformat_alloc_context();
 
   // output format (mpegts)
   oformat = av_guess_format("mpegts", NULL, NULL);
-  formatContext->oformat = oformat;
+  _formatContext->oformat = oformat;
 
   /*
    From documentation in avformat.h:
@@ -263,14 +276,13 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
   
   unsigned char *buffer;
   const size_t AVIO_BUFFER_SIZE = 4096;
-  const size_t STREAM_FRAME_RATE = 30;
   AVIOContext *avio;
-
+  
   buffer = av_malloc(AVIO_BUFFER_SIZE);
-  avio = avio_alloc_context(buffer, AVIO_BUFFER_SIZE, 1, NULL, &rPacket, &wPacket, NULL);
+  avio = avio_alloc_context(buffer, AVIO_BUFFER_SIZE, 1, (__bridge void *)self, NULL, &wPacket, NULL);
   
   // bytestream IO context, used for muxer output
-  formatContext->pb = avio;
+  _formatContext->pb = avio;
 
   /*
    From documentation in avformat.h:
@@ -285,11 +297,6 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
      described later).
    */
 
-  // Instead of creating an AVCodecContext ourselves, we use AVCodecParameters *codecpar parameter to AVStream
-  // AVCodecContext *codecContext;
-  // codecContext->gop_size    = 12;
-  // codecContext->time_base   = (AVRational){ 1, STREAM_FRAME_RATE };
-  
   AVCodecParameters *codecParameters = avcodec_parameters_alloc();
   codecParameters->codec_type = AVMEDIA_TYPE_VIDEO;
   codecParameters->codec_id   = AV_CODEC_ID_H264;
@@ -300,15 +307,12 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
   AVStream *outputStream;
 
   // Usage of codec member in AVStream is deprecated so we set it to NULL
-  outputStream = avformat_new_stream(formatContext, NULL);
-  outputStream->id = formatContext->nb_streams - 1;
+  outputStream = avformat_new_stream(_formatContext, NULL);
+  outputStream->id = _formatContext->nb_streams - 1;
   outputStream->codecpar = codecParameters;
-  
-  // outputStream->time_base = codecContext->time_base;
-  
-  av_dump_format(formatContext, 0, [@"RAM" UTF8String], 1);
-  
-  int ret = avformat_write_header(formatContext, NULL);
+  outputStream->time_base = av_make_q(1, 1000000000);
+
+  int ret = avformat_write_header(_formatContext, NULL);
   
   switch (ret) {
     case AVSTREAM_INIT_IN_WRITE_HEADER:
@@ -323,29 +327,68 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
       NSLog(@"AVERROR");
       break;
   }
-}
 
-int rPacket(void *opaque, uint8_t *buf, int buf_size)
-{
-  NSLog(@"rPacket");
-  return 1;
+  av_dump_format(_formatContext, 0, [@"RAM" UTF8String], 1);
+
+  // time_base 1/90000
+  NSLog(@"time_base %d/%d", outputStream->time_base.num, outputStream->time_base.den);
 }
 
 int wPacket(void *opaque, uint8_t *buf, int buf_size)
 {
-  NSLog(@"wPacket");
-  return 1;
+  Camera2ElementaryStreamCapturePipeline *this = (__bridge Camera2ElementaryStreamCapturePipeline *)opaque;
+
+  [this->_fileHandle writeData: [NSData dataWithBytes:buf length:buf_size]];
+
+  return buf_size;
 }
 
-- (void)appendElementaryStreamToTransportStream:(NSData *)elementaryStream
+- (void)appendElementaryStreamToTransportStream:(NSData *)elementaryStream fromSampleBuffer: (CMSampleBufferRef)sampleBuffer
 {
+  AVPacket packet;
+  uint8_t buf[(int)elementaryStream.length];
   
+  av_init_packet(&packet);
+
+  // elementaryStream most likely contains more that 1 frame (I, P and B)
+  // thus a packet might be invalid if its data is all the bytes from sampleBuffer
+  // packet pts and dts might also be wrong considering they would apply to several frames
+  
+  memcpy(buf, elementaryStream.bytes, elementaryStream.length);
+  packet.data = (uint8_t*)buf;
+  packet.size = (int)elementaryStream.length;
+  packet.stream_index = _formatContext->nb_streams - 1;
+
+  /*
+   From documentation in avformat.h:
+   The timestamps (@ref AVPacket.pts "pts", @ref AVPacket.dts "dts")
+   must be set to correct values in the stream's timebase (unless the
+   output format is flagged with the AVFMT_NOTIMESTAMPS flag, then
+   they can be set to AV_NOPTS_VALUE).
+   */
+  
+  CMTime pts = CMTimeSubtract(CMSampleBufferGetPresentationTimeStamp( sampleBuffer ), CMSampleBufferGetPresentationTimeStamp( firstSampleBuffer ));
+  CMTime dts = CMTimeSubtract(CMSampleBufferGetDecodeTimeStamp( sampleBuffer ), CMSampleBufferGetDecodeTimeStamp( firstSampleBuffer ));
+
+  packet.pts = pts.value;
+  packet.dts = dts.value;
+
+  CMTimeShow( pts );
+  NSLog(@"PTS in seconds %f",  CMTimeGetSeconds( pts ));
+
+  av_write_frame(_formatContext, &packet);
 }
 
 #pragma mark - Capture Pipeline
 
 - (void)captureOutput:(AVCaptureOutput *)captureOutput didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection
 {
+  // We use the first sample buffer PTS as basis for PTS/DTS
+  if (!firstSampleBuffer) {
+    firstSampleBuffer = sampleBuffer;
+    CFRetain(firstSampleBuffer);
+  }
+
   CVImageBufferRef imageBuffer = CMSampleBufferGetImageBuffer( sampleBuffer );
   VTCompressionSessionEncodeFrame( _compressionSession, imageBuffer, CMSampleBufferGetPresentationTimeStamp( sampleBuffer ), CMSampleBufferGetDuration( sampleBuffer ), NULL, NULL, NULL );
 }
@@ -355,21 +398,21 @@ int wPacket(void *opaque, uint8_t *buf, int buf_size)
   NSFileManager *fm = [NSFileManager defaultManager];
   NSString *docDir = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES)[0];
   NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
-  [formatter setDateFormat:@"dd-MM-yyyy_HH-mm"];
+  [formatter setDateFormat:@"dd-MM-yyyy_HH-mm-ss"];
   NSDate *currentDate = [NSDate date];
   NSString *dateString = [formatter stringFromDate:currentDate];
-  NSString *h264file = [docDir stringByAppendingPathComponent: [NSString stringWithFormat:@"%@%@%@", @"test_", dateString, @".h264"]];
+  NSString *tsFile = [docDir stringByAppendingPathComponent: [NSString stringWithFormat:@"%@%@%@", @"test_", dateString, @".ts"]];
     
   // Create file if it doesn't exist
-  if(![fm fileExistsAtPath:h264file])
+  if(![fm fileExistsAtPath:tsFile])
   {
-    if([fm createFileAtPath:h264file contents: nil attributes:nil])
+    if([fm createFileAtPath:tsFile contents: nil attributes:nil])
           NSLog(@"File Created");
       else
           NSLog(@"File Creation Failed");
   }
   
-  _fileHandle = [NSFileHandle fileHandleForWritingAtPath:h264file];
+  _fileHandle = [NSFileHandle fileHandleForWritingAtPath:tsFile];
 }
 
 - (void)teardownRecording
