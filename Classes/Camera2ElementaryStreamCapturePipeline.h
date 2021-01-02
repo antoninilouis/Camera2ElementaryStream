@@ -26,7 +26,7 @@
 - (void)start;
 - (void)stop;
 
-- (void)appendElementaryStreamToTransportStream:(NSData *)elementaryStream fromSampleBuffer: (CMSampleBufferRef)sampleBuffer;
+- (void)appendElementaryStreamToTransportStream:(NSData *)elementaryStream withTimingInfo: (CMSampleTimingInfo *)timingInfo;
 
 // Because we specify __attribute__((NSObject)) ARC will manage the lifetime of the backing ivars even though they are CF types.
 @property(nonatomic, strong) __attribute__((NSObject)) CMFormatDescriptionRef outputVideoFormatDescription;
