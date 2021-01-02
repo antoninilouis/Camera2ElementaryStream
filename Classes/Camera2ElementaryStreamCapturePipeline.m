@@ -161,6 +161,9 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
     CMSampleBufferGetSampleTimingInfoArray(sampleBuffer, itemCount, timingInfos, &itemCount);
   }
   
+  Camera2ElementaryStreamCapturePipeline *this = (__bridge Camera2ElementaryStreamCapturePipeline *)outputCallbackRefCon;
+  size_t timingInfosOffset = 0;
+
   NSMutableData *elementaryStream = [NSMutableData data];
  
   // Find out if the sample buffer contains an I-Frame.
@@ -206,24 +209,17 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
           // Write the parameter set to the elementary stream
           [elementaryStream appendBytes:startCode length:startCodeLength];
           [elementaryStream appendBytes:parameterSetPointer length:parameterSetLength];
+
+        if (itemCount > 0) {
+          [this appendElementaryStreamToTransportStream:elementaryStream withTimingInfo:timingInfos + timingInfosOffset];
+          timingInfosOffset += sizeof(CMSampleTimingInfo);
+          itemCount--;
+        } else {
+          [this appendElementaryStreamToTransportStream:elementaryStream withTimingInfo:NULL];
+        }
+        [elementaryStream setLength:0];
       }
   }
-
-  Camera2ElementaryStreamCapturePipeline *this = (__bridge Camera2ElementaryStreamCapturePipeline *)outputCallbackRefCon;
-  
-  // Mux content into a Transport Stream [I FRAME]
-  
-  size_t timingInfosOffset = 0;
-
-  if (itemCount > 0) {
-    [this appendElementaryStreamToTransportStream:elementaryStream withTimingInfo:timingInfos + timingInfosOffset];
-    timingInfosOffset += sizeof(CMSampleTimingInfo);
-    itemCount--;
-  } else {
-    [this appendElementaryStreamToTransportStream:elementaryStream withTimingInfo:NULL];
-  }
-  
-  [elementaryStream setLength:0];
 
   // Get a pointer to the raw AVCC NAL unit data in the sample buffer
   size_t blockBufferLength;
@@ -251,7 +247,6 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
     // Move to the next NAL unit in the block buffer
     bufferOffset += AVCCHeaderLength + NALUnitLength;
 
-    // Mux content into a Transport Stream [I FRAME]
     if (itemCount > 0) {
       [this appendElementaryStreamToTransportStream:elementaryStream withTimingInfo:timingInfos + timingInfosOffset];
       timingInfosOffset += sizeof(CMSampleTimingInfo);
@@ -259,6 +254,7 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
     } else {
       [this appendElementaryStreamToTransportStream:elementaryStream withTimingInfo:NULL];
     }
+    [elementaryStream setLength:0];
   }
 }
 
@@ -336,20 +332,19 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
   AVCodecParameters *codecParameters = avcodec_parameters_alloc();
   codecParameters->codec_type = AVMEDIA_TYPE_VIDEO;
   codecParameters->codec_id   = AV_CODEC_ID_H264;
-  codecParameters->bit_rate   = 2000000;
   codecParameters->width      = 1920;
   codecParameters->height     = 1080;
-  
+
   AVStream *outputStream;
 
   // Usage of codec member in AVStream is deprecated so we set it to NULL
   outputStream = avformat_new_stream(_formatContext, NULL);
   outputStream->id = _formatContext->nb_streams - 1;
   outputStream->codecpar = codecParameters;
-  outputStream->time_base = av_make_q(1, 1000000000);
+  outputStream->avg_frame_rate = av_make_q(30, 1);
 
   int ret = avformat_write_header(_formatContext, NULL);
-  
+    
   switch (ret) {
     case AVSTREAM_INIT_IN_WRITE_HEADER:
       NSLog(@"AVSTREAM_INIT_IN_WRITE_HEADER");
@@ -386,10 +381,6 @@ int wPacket(void *opaque, uint8_t *buf, int buf_size)
   
   av_init_packet(&packet);
 
-  // elementaryStream most likely contains more that 1 frame (I, P and B)
-  // thus a packet might be invalid if its data is all the bytes from sampleBuffer
-  // packet pts and dts might also be wrong considering they would apply to several frames
-  
   memcpy(buf, elementaryStream.bytes, elementaryStream.length);
   packet.data = (uint8_t*)buf;
   packet.size = (int)elementaryStream.length;
@@ -403,19 +394,30 @@ int wPacket(void *opaque, uint8_t *buf, int buf_size)
    they can be set to AV_NOPTS_VALUE).
    */
 
+  /*
+   Do note that the timing
+   information on the packets sent to the muxer must be in the corresponding
+   AVStream's timebase. That timebase is set by the muxer (in the
+   avformat_write_header() step) and may be different from the timebase
+   requested by the caller.
+   */
+  
   if (timingInfo) {
     CMTime pts = CMTimeSubtract(timingInfo->presentationTimeStamp, CMSampleBufferGetPresentationTimeStamp( firstSampleBuffer ));
 //    CMTime dts = CMTimeSubtract(timingInfo->decodeTimeStamp, CMSampleBufferGetDecodeTimeStamp( firstSampleBuffer ));
+    pts = CMTimeConvertScale(pts, 90000, kCMTimeRoundingMethod_RoundTowardZero);
+//    dts = CMTimeConvertScale(dts, 90000, kCMTimeRoundingMethod_RoundTowardZero);
 
     packet.pts = pts.value;
-//    packet.dts = dts.value;
+    packet.dts = pts.value;
 
 //    CMTimeShow( CMSampleBufferGetDecodeTimeStamp( firstSampleBuffer ) );
 //    NSLog(@"CMSampleBufferGetDecodeTimeStamp( firstSampleBuffer ) in seconds %f",  CMTimeGetSeconds( CMSampleBufferGetDecodeTimeStamp( firstSampleBuffer ) ));
 //    CMTimeShow( timingInfo->decodeTimeStamp );
 //    NSLog(@"timingInfo->decodeTimeStamp in seconds %f",  CMTimeGetSeconds( timingInfo->decodeTimeStamp ));
-//    CMTimeShow( pts );
-//    NSLog(@"PTS in seconds %f",  CMTimeGetSeconds( pts ));
+
+    CMTimeShow( pts );
+    NSLog(@"PTS in seconds %f",  CMTimeGetSeconds( pts ));
 //    CMTimeShow( dts );
 //    NSLog(@"DTS in seconds %f",  CMTimeGetSeconds( dts ));
   }
