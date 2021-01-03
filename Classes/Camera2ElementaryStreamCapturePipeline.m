@@ -146,26 +146,21 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
   }
 
   /*
-   Obtaining the array of timing info to set the correct PTS/DTS on each frame
+   Obtaining the array of timing info (containing the sample TimingInfo)
    */
   
-  CMItemCount itemCount;
-  CMSampleTimingInfo *timingInfos;
+  CMItemCount tInfoCount;
+  CMSampleTimingInfo *timingInfos = NULL;
   NSMutableData* timingInfosData = [NSMutableData dataWithLength:sizeof(CMSampleTimingInfo)];
 
   timingInfos = (CMSampleTimingInfo *)timingInfosData.mutableBytes;
-  CMSampleBufferGetSampleTimingInfoArray(sampleBuffer, 1, timingInfos, &itemCount);
+  CMSampleBufferGetSampleTimingInfoArray(sampleBuffer, 1, timingInfos, &tInfoCount);
   
-  if (timingInfos == NULL && itemCount > 0) {
-    [timingInfosData setLength:sizeof(CMSampleTimingInfo) * itemCount];
-    CMSampleBufferGetSampleTimingInfoArray(sampleBuffer, itemCount, timingInfos, &itemCount);
+  if (timingInfos == NULL && tInfoCount > 0) {
+    [timingInfosData setLength:sizeof(CMSampleTimingInfo) * tInfoCount];
+    CMSampleBufferGetSampleTimingInfoArray(sampleBuffer, tInfoCount, timingInfos, &tInfoCount);
   }
   
-  Camera2ElementaryStreamCapturePipeline *this = (__bridge Camera2ElementaryStreamCapturePipeline *)outputCallbackRefCon;
-  size_t timingInfosOffset = 0;
-
-  NSMutableData *elementaryStream = [NSMutableData data];
- 
   // Find out if the sample buffer contains an I-Frame.
   // If so we will write the SPS and PPS NAL units to the elementary stream.
   BOOL isIFrame = NO;
@@ -184,7 +179,8 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
   // the elementary stream before every NAL unit
   static const size_t startCodeLength = 4;
   static const uint8_t startCode[] = {0x00, 0x00, 0x00, 0x01};
- 
+  NSMutableData *elementaryStream = [NSMutableData data];
+
   // Write the SPS and PPS NAL units to the elementary stream before every I-Frame
   if (isIFrame) {
       CMFormatDescriptionRef description = CMSampleBufferGetFormatDescription( sampleBuffer );
@@ -209,15 +205,6 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
           // Write the parameter set to the elementary stream
           [elementaryStream appendBytes:startCode length:startCodeLength];
           [elementaryStream appendBytes:parameterSetPointer length:parameterSetLength];
-
-        if (itemCount > 0) {
-          [this appendElementaryStreamToTransportStream:elementaryStream withTimingInfo:timingInfos + timingInfosOffset];
-          timingInfosOffset += sizeof(CMSampleTimingInfo);
-          itemCount--;
-        } else {
-          [this appendElementaryStreamToTransportStream:elementaryStream withTimingInfo:NULL];
-        }
-        [elementaryStream setLength:0];
       }
   }
 
@@ -229,7 +216,7 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
                               NULL,
                               &blockBufferLength,
                               (char **)&bufferDataPointer );
- 
+
   // Loop through all the NAL units in the block buffer
   // and write them to the elementary stream with
   // start codes instead of AVCC length headers
@@ -246,16 +233,11 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
     [elementaryStream appendBytes:bufferDataPointer + bufferOffset + AVCCHeaderLength length:NALUnitLength];
     // Move to the next NAL unit in the block buffer
     bufferOffset += AVCCHeaderLength + NALUnitLength;
-
-    if (itemCount > 0) {
-      [this appendElementaryStreamToTransportStream:elementaryStream withTimingInfo:timingInfos + timingInfosOffset];
-      timingInfosOffset += sizeof(CMSampleTimingInfo);
-      itemCount--;
-    } else {
-      [this appendElementaryStreamToTransportStream:elementaryStream withTimingInfo:NULL];
-    }
-    [elementaryStream setLength:0];
   }
+
+  Camera2ElementaryStreamCapturePipeline *this = (__bridge Camera2ElementaryStreamCapturePipeline *)outputCallbackRefCon;
+
+  [this appendElementaryStreamToTransportStream:elementaryStream withTimingInfo:timingInfos];
 }
 
 - (void)teardownCompressionSession
@@ -403,23 +385,22 @@ int wPacket(void *opaque, uint8_t *buf, int buf_size)
    */
   
   if (timingInfo) {
-    CMTime pts = CMTimeSubtract(timingInfo->presentationTimeStamp, CMSampleBufferGetPresentationTimeStamp( firstSampleBuffer ));
-//    CMTime dts = CMTimeSubtract(timingInfo->decodeTimeStamp, CMSampleBufferGetDecodeTimeStamp( firstSampleBuffer ));
+    CMTime dts = CMTimeSubtract(timingInfo->decodeTimeStamp, CMSampleBufferGetPresentationTimeStamp(firstSampleBuffer));
+    CMTime pts = CMTimeSubtract(timingInfo->presentationTimeStamp, CMSampleBufferGetPresentationTimeStamp(firstSampleBuffer));
+
+    dts = CMTimeConvertScale(dts, 90000, kCMTimeRoundingMethod_RoundTowardZero);
     pts = CMTimeConvertScale(pts, 90000, kCMTimeRoundingMethod_RoundTowardZero);
-//    dts = CMTimeConvertScale(dts, 90000, kCMTimeRoundingMethod_RoundTowardZero);
 
+    // Add one frame to all presentation timestamps to account for late dts in timingInfo
+    pts = CMTimeAdd(pts, CMTimeMake(90000 / 30, 90000));
+
+    packet.dts = dts.value;
     packet.pts = pts.value;
-    packet.dts = pts.value;
 
-//    CMTimeShow( CMSampleBufferGetDecodeTimeStamp( firstSampleBuffer ) );
-//    NSLog(@"CMSampleBufferGetDecodeTimeStamp( firstSampleBuffer ) in seconds %f",  CMTimeGetSeconds( CMSampleBufferGetDecodeTimeStamp( firstSampleBuffer ) ));
-//    CMTimeShow( timingInfo->decodeTimeStamp );
-//    NSLog(@"timingInfo->decodeTimeStamp in seconds %f",  CMTimeGetSeconds( timingInfo->decodeTimeStamp ));
-
+    CMTimeShow( dts );
+    NSLog(@"DTS in seconds %f",  CMTimeGetSeconds( dts ));
     CMTimeShow( pts );
     NSLog(@"PTS in seconds %f",  CMTimeGetSeconds( pts ));
-//    CMTimeShow( dts );
-//    NSLog(@"DTS in seconds %f",  CMTimeGetSeconds( dts ));
   }
 
   av_write_frame(_formatContext, &packet);
@@ -429,8 +410,7 @@ int wPacket(void *opaque, uint8_t *buf, int buf_size)
 
 - (void)captureOutput:(AVCaptureOutput *)captureOutput didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection
 {
-  // We use the first sample buffer PTS as basis for PTS/DTS
-  if (!firstSampleBuffer) {
+  if (firstSampleBuffer == NULL) {
     firstSampleBuffer = sampleBuffer;
     CFRetain(firstSampleBuffer);
   }
