@@ -100,8 +100,17 @@
 //  videoOut.videoSettings = @{ (id)kCVPixelBufferPixelFormatTypeKey : @(_renderer.inputPixelFormat) };
   [videoOut setSampleBufferDelegate:self queue:_videoDataOutputQueue];
   videoOut.alwaysDiscardsLateVideoFrames = NO;
+
+  /*
+   In iOS, you should generally set the session preset on an AVCaptureSession object to configure
+   image or video capture and use the shared AVAudioSession object to configure audio capture.
+   When using a session preset, the session automatically controls the capture device’s active format.
+   However, some specialized capture options (such as high frame rate) are not available in session presets.
+   For these options, you can set the capture device’s active format instead.
+   */
   [_captureSession addOutput:videoOut];
   _videoConnection = [videoOut connectionWithMediaType:AVMediaTypeVideo];
+  [_videoConnection setVideoOrientation:AVCaptureVideoOrientationPortrait];
 
   // Use fixed frame rate
   CMTime frameDuration = CMTimeMake( 1, 30 );
@@ -166,13 +175,13 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
   BOOL isIFrame = NO;
   CFArrayRef attachmentsArray = CMSampleBufferGetSampleAttachmentsArray( sampleBuffer, 0 );
   if (CFArrayGetCount(attachmentsArray)) {
-      CFBooleanRef notSync;
-      CFDictionaryRef dict = CFArrayGetValueAtIndex( attachmentsArray, 0 );
-      BOOL keyExists = CFDictionaryGetValueIfPresent( dict,
-                                                     kCMSampleAttachmentKey_NotSync,
-                                                     (const void **)&notSync );
-      // An I-Frame is a sync frame
-      isIFrame = !keyExists || !CFBooleanGetValue( notSync );
+    CFBooleanRef notSync;
+    CFDictionaryRef dict = CFArrayGetValueAtIndex( attachmentsArray, 0 );
+    BOOL keyExists = CFDictionaryGetValueIfPresent( dict,
+                                                   kCMSampleAttachmentKey_NotSync,
+                                                   (const void **)&notSync );
+    // An I-Frame is a sync frame
+    isIFrame = !keyExists || !CFBooleanGetValue( notSync );
   }
  
   // This is the start code that we will write to
@@ -183,29 +192,29 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
 
   // Write the SPS and PPS NAL units to the elementary stream before every I-Frame
   if (isIFrame) {
-      CMFormatDescriptionRef description = CMSampleBufferGetFormatDescription( sampleBuffer );
-     
-      // Find out how many parameter sets there are
-      size_t numberOfParameterSets;
+    CMFormatDescriptionRef description = CMSampleBufferGetFormatDescription( sampleBuffer );
+   
+    // Find out how many parameter sets there are
+    size_t numberOfParameterSets;
+    CMVideoFormatDescriptionGetH264ParameterSetAtIndex( description,
+                                                       0, NULL, NULL,
+                                                       &numberOfParameterSets,
+                                                       NULL );
+   
+    // Write each parameter set to the elementary stream
+    for (int i = 0; i < numberOfParameterSets; i++) {
+      const uint8_t *parameterSetPointer;
+      size_t parameterSetLength;
       CMVideoFormatDescriptionGetH264ParameterSetAtIndex( description,
-                                                         0, NULL, NULL,
-                                                         &numberOfParameterSets,
-                                                         NULL );
+                                                         i,
+                                                         &parameterSetPointer,
+                                                         &parameterSetLength,
+                                                         NULL, NULL );
      
-      // Write each parameter set to the elementary stream
-      for (int i = 0; i < numberOfParameterSets; i++) {
-          const uint8_t *parameterSetPointer;
-          size_t parameterSetLength;
-          CMVideoFormatDescriptionGetH264ParameterSetAtIndex( description,
-                                                             i,
-                                                             &parameterSetPointer,
-                                                             &parameterSetLength,
-                                                             NULL, NULL );
-         
-          // Write the parameter set to the elementary stream
-          [elementaryStream appendBytes:startCode length:startCodeLength];
-          [elementaryStream appendBytes:parameterSetPointer length:parameterSetLength];
-      }
+      // Write the parameter set to the elementary stream
+      [elementaryStream appendBytes:startCode length:startCodeLength];
+      [elementaryStream appendBytes:parameterSetPointer length:parameterSetLength];
+    }
   }
 
   // Get a pointer to the raw AVCC NAL unit data in the sample buffer
@@ -235,6 +244,7 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
     bufferOffset += AVCCHeaderLength + NALUnitLength;
   }
 
+  // Pipeline
   Camera2ElementaryStreamCapturePipeline *this = (__bridge Camera2ElementaryStreamCapturePipeline *)outputCallbackRefCon;
 
   [this appendElementaryStreamToTransportStream:elementaryStream withTimingInfo:timingInfos];
@@ -368,6 +378,12 @@ int wPacket(void *opaque, uint8_t *buf, int buf_size)
   packet.size = (int)elementaryStream.length;
   packet.stream_index = _formatContext->nb_streams - 1;
 
+  if (timingInfo == NULL) {
+    av_write_frame(_formatContext, &packet);
+  }
+
+  CMTime dts = CMTimeSubtract(timingInfo->decodeTimeStamp, CMSampleBufferGetPresentationTimeStamp(firstSampleBuffer));
+
   /*
    From documentation in avformat.h:
    The timestamps (@ref AVPacket.pts "pts", @ref AVPacket.dts "dts")
@@ -376,33 +392,36 @@ int wPacket(void *opaque, uint8_t *buf, int buf_size)
    they can be set to AV_NOPTS_VALUE).
    */
 
+  dts = CMTimeConvertScale(dts, 90000, kCMTimeRoundingMethod_RoundTowardZero);
+
   /*
-   Do note that the timing
-   information on the packets sent to the muxer must be in the corresponding
-   AVStream's timebase. That timebase is set by the muxer (in the
-   avformat_write_header() step) and may be different from the timebase
-   requested by the caller.
+   Frames are received in DTS order.
+   
+   DTS in timingInfos = ts at which the frame should be decoded
+   PTS in timingInfos = ts at which the frame was presented to the encoder
+   
+   Thus, PTS should be calculated and set after DTS
+   Option 1: CMTime pts = CMTimeAdd(dts, CMTimeMake(90000 / 30, 90000));
+   Option 2: CMTime pts = CMTimeAdd((pts from timingInfos), CMTimeMake(90000 / 30, 90000));
    */
-  
-  if (timingInfo) {
-    CMTime dts = CMTimeSubtract(timingInfo->decodeTimeStamp, CMSampleBufferGetPresentationTimeStamp(firstSampleBuffer));
-    CMTime pts = CMTimeSubtract(timingInfo->presentationTimeStamp, CMSampleBufferGetPresentationTimeStamp(firstSampleBuffer));
 
-    dts = CMTimeConvertScale(dts, 90000, kCMTimeRoundingMethod_RoundTowardZero);
-    pts = CMTimeConvertScale(pts, 90000, kCMTimeRoundingMethod_RoundTowardZero);
+  CMTime pts;
 
-    // Add one frame to all presentation timestamps to account for late dts in timingInfo
-    pts = CMTimeAdd(pts, CMTimeMake(90000 / 30, 90000));
-
-    packet.dts = dts.value;
-    packet.pts = pts.value;
-
-    CMTimeShow( dts );
-    NSLog(@"DTS in seconds %f",  CMTimeGetSeconds( dts ));
-    CMTimeShow( pts );
-    NSLog(@"PTS in seconds %f",  CMTimeGetSeconds( pts ));
+  if (dts.value > 0) {
+    pts = CMTimeAdd(dts, CMTimeMake(90000 / 30, 90000));
+  } else {
+    pts = dts;
   }
+  
+  packet.dts = dts.value;
+  packet.pts = pts.value;
+  packet.duration = CMTimeConvertScale(timingInfo->duration, 90000, kCMTimeRoundingMethod_RoundTowardZero).value;
 
+  CMTimeShow( dts );
+  NSLog(@"DTS in seconds %f",  CMTimeGetSeconds( dts ));
+  CMTimeShow( pts );
+  NSLog(@"PTS in seconds %f",  CMTimeGetSeconds( pts ));
+  
   av_write_frame(_formatContext, &packet);
 }
 
