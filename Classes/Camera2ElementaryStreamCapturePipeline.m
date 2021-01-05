@@ -30,16 +30,22 @@
   __weak id<Camera2ElementaryStreamCapturePipelineDelegate> _delegate;
   dispatch_queue_t _delegateCallbackQueue;
 
+  // AV - Capture
   AVCaptureSession *_captureSession;
   AVCaptureDevice *_videoDevice;
   AVCaptureConnection *_videoConnection;
   dispatch_queue_t _videoDataOutputQueue;
 
+  // H.264 - Compression
   VTCompressionSessionRef _compressionSession;
   NSFileHandle *_fileHandle;
   
-  AVFormatContext *_formatContext;
+  // MPEG-TS - Muxing
+  AVFormatContext *_mpegtsContext;
   CMSampleBufferRef firstSampleBuffer;
+
+  // RTP - Transport
+  AVFormatContext *_rtpContext;
 }
 
 - (instancetype)initWithDelegate:(id<Camera2ElementaryStreamCapturePipelineDelegate>)delegate callbackQueue:(dispatch_queue_t)queue {
@@ -61,8 +67,9 @@
 {
   [self setupCaptureSession];
   [self setupCompressionSession];
-  [self setupRecording];
+//  [self setupRecording];
   [self setupMuxing];
+  [self setupStreaming];
   [_delegate startRendering:_captureSession];
   [_captureSession startRunning];
 }
@@ -71,7 +78,7 @@
 {
   [self teardownCaptureSession];
   [self teardownCompressionSession];
-  [self teardownRecording];
+//  [self teardownRecording];
   [_delegate stopRendering];
 }
 
@@ -140,6 +147,8 @@
 - (void)setupCompressionSession
 {
   CMVideoDimensions videoDimensions = CMVideoFormatDescriptionGetDimensions( self.outputVideoFormatDescription );
+  
+  NSLog(@"Video capture %dx%d", videoDimensions.width, videoDimensions.height);
 
   VTCompressionSessionCreate( NULL, videoDimensions.width, videoDimensions.height, kCMVideoCodecType_H264, NULL, NULL, NULL, &compressionOutputCallback, (__bridge void *) self, &_compressionSession );
   VTSessionSetProperty( _compressionSession, kVTCompressionPropertyKey_RealTime, kCFBooleanTrue );
@@ -265,8 +274,6 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
  */
 - (void)setupMuxing
 {
-  AVOutputFormat *oformat;
-
   /*
    Does the job despite being flagged as deprecated
    Must be replaced by av_demuxer_iterate/av_muxer_iterate()
@@ -281,11 +288,8 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
    the muxer by filling the various fields in this context
    */
   
-  _formatContext = avformat_alloc_context();
-
-  // output format (mpegts)
-  oformat = av_guess_format("mpegts", NULL, NULL);
-  _formatContext->oformat = oformat;
+  _mpegtsContext = avformat_alloc_context();
+  _mpegtsContext->oformat = av_guess_format("mpegts", NULL, NULL);
 
   /*
    From documentation in avformat.h:
@@ -299,14 +303,14 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
    */
   
   unsigned char *buffer;
-  const size_t AVIO_BUFFER_SIZE = 4096;
+  const size_t AVIO_BUFFER_SIZE = 188 * 7;
   AVIOContext *avio;
   
   buffer = av_malloc(AVIO_BUFFER_SIZE);
-  avio = avio_alloc_context(buffer, AVIO_BUFFER_SIZE, 1, (__bridge void *)self, NULL, &wPacket, NULL);
+  avio = avio_alloc_context(buffer, AVIO_BUFFER_SIZE, 1, (__bridge void *)self, NULL, &writeMpegtsPacket, NULL);
   
   // bytestream IO context, used for muxer output
-  _formatContext->pb = avio;
+  _mpegtsContext->pb = avio;
 
   /*
    From documentation in avformat.h:
@@ -330,12 +334,12 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
   AVStream *outputStream;
 
   // Usage of codec member in AVStream is deprecated so we set it to NULL
-  outputStream = avformat_new_stream(_formatContext, NULL);
-  outputStream->id = _formatContext->nb_streams - 1;
+  outputStream = avformat_new_stream(_mpegtsContext, NULL);
+  outputStream->id = _mpegtsContext->nb_streams - 1;
   outputStream->codecpar = codecParameters;
   outputStream->avg_frame_rate = av_make_q(30, 1);
 
-  int ret = avformat_write_header(_formatContext, NULL);
+  int ret = avformat_write_header(_mpegtsContext, NULL);
     
   switch (ret) {
     case AVSTREAM_INIT_IN_WRITE_HEADER:
@@ -351,17 +355,15 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
       break;
   }
 
-  av_dump_format(_formatContext, 0, [@"RAM" UTF8String], 1);
-
-  // time_base 1/90000
-  NSLog(@"time_base %d/%d", outputStream->time_base.num, outputStream->time_base.den);
+//  av_dump_format(_mpegtsContext, 0, [@"RAM" UTF8String], 1);
 }
 
-int wPacket(void *opaque, uint8_t *buf, int buf_size)
+int writeMpegtsPacket(void *opaque, uint8_t *buf, int buf_size)
 {
   Camera2ElementaryStreamCapturePipeline *this = (__bridge Camera2ElementaryStreamCapturePipeline *)opaque;
 
-  [this->_fileHandle writeData: [NSData dataWithBytes:buf length:buf_size]];
+//  [this->_fileHandle writeData: [NSData dataWithBytes:buf length:buf_size]];
+  [this writeBufferToRTP:buf withSize:buf_size];
 
   return buf_size;
 }
@@ -376,10 +378,10 @@ int wPacket(void *opaque, uint8_t *buf, int buf_size)
   memcpy(buf, elementaryStream.bytes, elementaryStream.length);
   packet.data = (uint8_t*)buf;
   packet.size = (int)elementaryStream.length;
-  packet.stream_index = _formatContext->nb_streams - 1;
+  packet.stream_index = _mpegtsContext->nb_streams - 1;
 
   if (timingInfo == NULL) {
-    av_write_frame(_formatContext, &packet);
+    av_write_frame(_mpegtsContext, &packet);
   }
 
   CMTime dts = CMTimeSubtract(timingInfo->decodeTimeStamp, CMSampleBufferGetPresentationTimeStamp(firstSampleBuffer));
@@ -417,12 +419,62 @@ int wPacket(void *opaque, uint8_t *buf, int buf_size)
   packet.pts = pts.value;
   packet.duration = CMTimeConvertScale(timingInfo->duration, 90000, kCMTimeRoundingMethod_RoundTowardZero).value;
 
-  CMTimeShow( dts );
-  NSLog(@"DTS in seconds %f",  CMTimeGetSeconds( dts ));
-  CMTimeShow( pts );
-  NSLog(@"PTS in seconds %f",  CMTimeGetSeconds( pts ));
+  av_write_frame(_mpegtsContext, &packet);
+}
+
+#pragma mark - RTP Streaming
+
+- (void)setupStreaming
+{
+  avformat_network_init();
+
+  avformat_alloc_output_context2(&_rtpContext, NULL, "rtp", "rtp://192.168.1.76:49990");
+  avio_open(&_rtpContext->pb, _rtpContext->filename, AVIO_FLAG_WRITE);
+  _rtpContext->debug = TRUE;
+
+  AVCodecParameters *codecParameters = avcodec_parameters_alloc();
+  codecParameters->codec_id = AV_CODEC_ID_MPEG2TS;
+
+  AVStream *outputStream;
+
+  // Usage of codec member in AVStream is deprecated so we set it to NULL
+  outputStream = avformat_new_stream(_rtpContext, NULL);
+  outputStream->codecpar = codecParameters;
+
+  int ret = avformat_write_header(_rtpContext, NULL);
+
+  switch (ret) {
+    case AVSTREAM_INIT_IN_WRITE_HEADER:
+      NSLog(@"AVSTREAM_INIT_IN_WRITE_HEADER");
+      break;
+
+    case AVSTREAM_INIT_IN_INIT_OUTPUT:
+      NSLog(@"AVSTREAM_INIT_IN_INIT_OUTPUT");
+      break;
+
+    default:
+      NSLog(@"AVERROR");
+      break;
+  }
+
+//  av_dump_format(_rtpContext, 0, _rtpContext->filename, 1);
   
-  av_write_frame(_formatContext, &packet);
+  // Print content of SDP
+  char buf[8192];
+  av_sdp_create(&_rtpContext, 1, buf, 8192);
+  printf("SDP\n\n%s\n", buf);
+}
+
+- (int)writeBufferToRTP:(uint8_t *)buffer withSize:(int)buf_size
+{
+  AVPacket packet;
+  
+  av_init_packet(&packet);
+  packet.data = buffer;
+  packet.size = buf_size;
+  
+  av_write_frame(_rtpContext, &packet);
+  return buf_size;
 }
 
 #pragma mark - Capture Pipeline
