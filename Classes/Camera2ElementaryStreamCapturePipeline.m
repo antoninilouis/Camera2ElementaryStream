@@ -98,7 +98,7 @@ const int RESULTING_VIDEO_HEIGHT = 812;
   _captureSession = [[AVCaptureSession alloc] init];
 
   // Setup the capture session quality level or bitrate
-  _captureSession.sessionPreset = AVCaptureSessionPresetHigh;
+  _captureSession.sessionPreset = AVCaptureSessionPresetiFrame960x540;
 
   // Setup the capture session input
   AVCaptureDevice *videoDevice = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
@@ -147,6 +147,7 @@ const int RESULTING_VIDEO_HEIGHT = 812;
   CMVideoDimensions videoDimensions = CMVideoFormatDescriptionGetDimensions( self.outputVideoFormatDescription );
   
   NSLog(@"Video capture %dx%d", videoDimensions.width, videoDimensions.height);
+  NSLog(@"Video encoding %dx%d", RESULTING_VIDEO_WIDTH, RESULTING_VIDEO_HEIGHT);
 
   VTCompressionSessionCreate( NULL, RESULTING_VIDEO_WIDTH, RESULTING_VIDEO_HEIGHT, kCMVideoCodecType_H264, NULL, NULL, NULL, &compressionOutputCallback, (__bridge void *) self, &_compressionSession );
   VTSessionSetProperty( _compressionSession, kVTCompressionPropertyKey_RealTime, kCFBooleanTrue );
