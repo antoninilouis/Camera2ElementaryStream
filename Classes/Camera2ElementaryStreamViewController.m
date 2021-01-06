@@ -57,6 +57,8 @@ NSString * const STOP_CAPTURE_BUTTON_TITLE = @"Start Capture";
   previewLayer.name = PREVIEW_LAYER_NAME;
   previewLayer.zPosition = _recordButton.layer.zPosition - 1;
 
+  NSLog(@"Preview layer bounds %@", NSStringFromCGSize( self.view.bounds.size ));
+  
   // Add preview layer into the view's layer hierarchy.
   [self.view.layer addSublayer:previewLayer];
 }

@@ -5,9 +5,14 @@
 //  Created by Antonini Louis on 2020-12-25.
 //
 
+#import <VideoToolbox/VideoToolbox.h>
+#import <CoreImage/CoreImage.h>
 #import <libavformat/avformat.h>
 
 #import "Camera2ElementaryStreamCapturePipeline.h"
+
+const int RESULTING_VIDEO_WIDTH = 375;
+const int RESULTING_VIDEO_HEIGHT = 812;
 
 /*
  Manages the capture session
@@ -107,15 +112,8 @@
 //  videoOut.videoSettings = @{ (id)kCVPixelBufferPixelFormatTypeKey : @(_renderer.inputPixelFormat) };
   [videoOut setSampleBufferDelegate:self queue:_videoDataOutputQueue];
   videoOut.alwaysDiscardsLateVideoFrames = NO;
-
-  /*
-   In iOS, you should generally set the session preset on an AVCaptureSession object to configure
-   image or video capture and use the shared AVAudioSession object to configure audio capture.
-   When using a session preset, the session automatically controls the capture device’s active format.
-   However, some specialized capture options (such as high frame rate) are not available in session presets.
-   For these options, you can set the capture device’s active format instead.
-   */
   [_captureSession addOutput:videoOut];
+
   _videoConnection = [videoOut connectionWithMediaType:AVMediaTypeVideo];
   [_videoConnection setVideoOrientation:AVCaptureVideoOrientationPortrait];
 
@@ -150,7 +148,7 @@
   
   NSLog(@"Video capture %dx%d", videoDimensions.width, videoDimensions.height);
 
-  VTCompressionSessionCreate( NULL, videoDimensions.width, videoDimensions.height, kCMVideoCodecType_H264, NULL, NULL, NULL, &compressionOutputCallback, (__bridge void *) self, &_compressionSession );
+  VTCompressionSessionCreate( NULL, RESULTING_VIDEO_WIDTH, RESULTING_VIDEO_HEIGHT, kCMVideoCodecType_H264, NULL, NULL, NULL, &compressionOutputCallback, (__bridge void *) self, &_compressionSession );
   VTSessionSetProperty( _compressionSession, kVTCompressionPropertyKey_RealTime, kCFBooleanTrue );
   VTCompressionSessionPrepareToEncodeFrames( _compressionSession );
 }
@@ -303,11 +301,11 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
    */
   
   unsigned char *buffer;
-  const size_t AVIO_BUFFER_SIZE = 188 * 7;
+  const size_t MPEGTS_AVIO_BUFFER_SIZE = 188 * 7;
   AVIOContext *avio;
   
-  buffer = av_malloc(AVIO_BUFFER_SIZE);
-  avio = avio_alloc_context(buffer, AVIO_BUFFER_SIZE, 1, (__bridge void *)self, NULL, &writeMpegtsPacket, NULL);
+  buffer = av_malloc(MPEGTS_AVIO_BUFFER_SIZE);
+  avio = avio_alloc_context(buffer, MPEGTS_AVIO_BUFFER_SIZE, 1, (__bridge void *)self, NULL, &writeMpegtsPacket, NULL);
   
   // bytestream IO context, used for muxer output
   _mpegtsContext->pb = avio;
@@ -328,8 +326,8 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
   AVCodecParameters *codecParameters = avcodec_parameters_alloc();
   codecParameters->codec_type = AVMEDIA_TYPE_VIDEO;
   codecParameters->codec_id   = AV_CODEC_ID_H264;
-  codecParameters->width      = 1920;
-  codecParameters->height     = 1080;
+  codecParameters->width      = RESULTING_VIDEO_WIDTH;
+  codecParameters->height     = RESULTING_VIDEO_HEIGHT;
 
   AVStream *outputStream;
 

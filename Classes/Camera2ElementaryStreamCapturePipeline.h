@@ -9,7 +9,6 @@
 #define Camera2ElementaryStreamCapturePipeline_h
 
 #import <AVFoundation/AVFoundation.h>
-#import <VideoToolbox/VideoToolbox.h>
 
 @protocol Camera2ElementaryStreamCapturePipelineDelegate
 @required
