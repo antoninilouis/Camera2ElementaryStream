@@ -32,7 +32,6 @@
 		2E18D7E82596125500ED472F /* Camera2ElementaryStreamCapturePipeline.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Camera2ElementaryStreamCapturePipeline.h; sourceTree = "<group>"; };
 		2E18D7E9259612B900ED472F /* Camera2ElementaryStreamCapturePipeline.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = Camera2ElementaryStreamCapturePipeline.m; sourceTree = "<group>"; };
 		2E18D7F12597DD3E00ED472F /* Camera2ElementaryStreamApplicationDelegate.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = Camera2ElementaryStreamApplicationDelegate.m; sourceTree = "<group>"; };
-		2E18D7F82597DD5400ED472F /* Camera2ElementaryStreamApplicationDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Camera2ElementaryStreamApplicationDelegate.h; path = "/Users/lantonini/Workspace/chlorine-app/Camera2ElementaryStream/Classes/Camera2ElementaryStreamApplicationDelegate.h"; sourceTree = "<absolute>"; };
 		2E79C679259B6F0A00EC4156 /* version.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = version.h; sourceTree = "<group>"; };
 		2E79C67A259B6F0A00EC4156 /* buffersrc.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = buffersrc.h; sourceTree = "<group>"; };
 		2E79C67B259B6F0A00EC4156 /* buffersink.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = buffersink.h; sourceTree = "<group>"; };
@@ -162,6 +161,7 @@
 		2EC99434259B6BD20090E2D0 /* libbz2.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libbz2.tbd; path = usr/lib/libbz2.tbd; sourceTree = SDKROOT; };
 		2EC99438259B6BE00090E2D0 /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
 		2EDC564B2598CECD0099B6B2 /* VideoToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = VideoToolbox.framework; path = System/Library/Frameworks/VideoToolbox.framework; sourceTree = SDKROOT; };
+		2EF7FBD325F39305001FB296 /* Camera2ElementaryStreamApplicationDelegate.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Camera2ElementaryStreamApplicationDelegate.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -440,7 +440,7 @@
 				2E9C59592593F5BB006623C9 /* Camera2ElementaryStreamViewController.h */,
 				2E9C59512593F25A006623C9 /* Camera2ElementaryStreamViewController.m */,
 				2E18D7F12597DD3E00ED472F /* Camera2ElementaryStreamApplicationDelegate.m */,
-				2E18D7F82597DD5400ED472F /* Camera2ElementaryStreamApplicationDelegate.h */,
+				2EF7FBD325F39305001FB296 /* Camera2ElementaryStreamApplicationDelegate.h */,
 				2E18D7E82596125500ED472F /* Camera2ElementaryStreamCapturePipeline.h */,
 				2E18D7E9259612B900ED472F /* Camera2ElementaryStreamCapturePipeline.m */,
 			);

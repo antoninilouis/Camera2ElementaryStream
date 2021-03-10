@@ -11,7 +11,7 @@
 
 #import "Camera2ElementaryStreamCapturePipeline.h"
 
-const int RESULTING_VIDEO_WIDTH = 375;
+const int RESULTING_VIDEO_WIDTH = 374;
 const int RESULTING_VIDEO_HEIGHT = 812;
 
 /*
@@ -151,6 +151,8 @@ const int RESULTING_VIDEO_HEIGHT = 812;
 
   VTCompressionSessionCreate( NULL, RESULTING_VIDEO_WIDTH, RESULTING_VIDEO_HEIGHT, kCMVideoCodecType_H264, NULL, NULL, NULL, &compressionOutputCallback, (__bridge void *) self, &_compressionSession );
   VTSessionSetProperty( _compressionSession, kVTCompressionPropertyKey_RealTime, kCFBooleanTrue );
+  VTSessionSetProperty( _compressionSession, kVTCompressionPropertyKey_AverageBitRate, (__bridge CFTypeRef)@(RESULTING_VIDEO_WIDTH * RESULTING_VIDEO_HEIGHT) );
+
   VTCompressionSessionPrepareToEncodeFrames( _compressionSession );
 }
 
@@ -256,6 +258,7 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
   Camera2ElementaryStreamCapturePipeline *this = (__bridge Camera2ElementaryStreamCapturePipeline *)outputCallbackRefCon;
 
   [this appendElementaryStreamToTransportStream:elementaryStream withTimingInfo:timingInfos];
+  
 }
 
 - (void)teardownCompressionSession
@@ -301,16 +304,13 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
    AVFormatContext to newly created AVIOContext.
    */
   
-  unsigned char *buffer;
-  const size_t MPEGTS_AVIO_BUFFER_SIZE = 188 * 7;
   AVIOContext *avio;
-  
-  buffer = av_malloc(MPEGTS_AVIO_BUFFER_SIZE);
-  avio = avio_alloc_context(buffer, MPEGTS_AVIO_BUFFER_SIZE, 1, (__bridge void *)self, NULL, &writeMpegtsPacket, NULL);
-  
+
+  avio_open_dyn_buf(&avio);
+
   // bytestream IO context, used for muxer output
   _mpegtsContext->pb = avio;
-
+ 
   /*
    From documentation in avformat.h:
    - Unless the format is of the AVFMT_NOSTREAMS type, at least one stream must
@@ -329,6 +329,7 @@ void compressionOutputCallback(void *outputCallbackRefCon, void* sourceFrameRefC
   codecParameters->codec_id   = AV_CODEC_ID_H264;
   codecParameters->width      = RESULTING_VIDEO_WIDTH;
   codecParameters->height     = RESULTING_VIDEO_HEIGHT;
+  codecParameters->bit_rate   = RESULTING_VIDEO_WIDTH * RESULTING_VIDEO_HEIGHT;
 
   AVStream *outputStream;
 
@@ -370,55 +371,24 @@ int writeMpegtsPacket(void *opaque, uint8_t *buf, int buf_size)
 - (void)appendElementaryStreamToTransportStream:(NSData *)elementaryStream withTimingInfo: (CMSampleTimingInfo *)timingInfo
 {
   AVPacket packet;
-  uint8_t buf[(int)elementaryStream.length];
-  
+  uint8_t srcbuffer[(int)elementaryStream.length];
+  uint8_t *destbuffer;
+
   av_init_packet(&packet);
-
-  memcpy(buf, elementaryStream.bytes, elementaryStream.length);
-  packet.data = (uint8_t*)buf;
+  memcpy(srcbuffer, elementaryStream.bytes, elementaryStream.length);
+  packet.data = (uint8_t*)srcbuffer;
   packet.size = (int)elementaryStream.length;
+
   packet.stream_index = _mpegtsContext->nb_streams - 1;
+  packet.dts = timingInfo->decodeTimeStamp.value;
+  packet.pts = CMTimeAdd(timingInfo->presentationTimeStamp, CMTimeMake(timingInfo->presentationTimeStamp.timescale, timingInfo->presentationTimeStamp.timescale)).value;
+  av_packet_rescale_ts(&packet, av_make_q(1, timingInfo->presentationTimeStamp.timescale), av_make_q(1, 90000));
 
-  if (timingInfo == NULL) {
-    av_write_frame(_mpegtsContext, &packet);
-  }
-
-  CMTime dts = CMTimeSubtract(timingInfo->decodeTimeStamp, CMSampleBufferGetPresentationTimeStamp(firstSampleBuffer));
-
-  /*
-   From documentation in avformat.h:
-   The timestamps (@ref AVPacket.pts "pts", @ref AVPacket.dts "dts")
-   must be set to correct values in the stream's timebase (unless the
-   output format is flagged with the AVFMT_NOTIMESTAMPS flag, then
-   they can be set to AV_NOPTS_VALUE).
-   */
-
-  dts = CMTimeConvertScale(dts, 90000, kCMTimeRoundingMethod_RoundTowardZero);
-
-  /*
-   Frames are received in DTS order.
-   
-   DTS in timingInfos = ts at which the frame should be decoded
-   PTS in timingInfos = ts at which the frame was presented to the encoder
-   
-   Thus, PTS should be calculated and set after DTS
-   Option 1: CMTime pts = CMTimeAdd(dts, CMTimeMake(90000 / 30, 90000));
-   Option 2: CMTime pts = CMTimeAdd((pts from timingInfos), CMTimeMake(90000 / 30, 90000));
-   */
-
-  CMTime pts;
-
-  if (dts.value > 0) {
-    pts = CMTimeAdd(dts, CMTimeMake(90000 / 30, 90000));
-  } else {
-    pts = dts;
-  }
-  
-  packet.dts = dts.value;
-  packet.pts = pts.value;
-  packet.duration = CMTimeConvertScale(timingInfo->duration, 90000, kCMTimeRoundingMethod_RoundTowardZero).value;
-
-  av_write_frame(_mpegtsContext, &packet);
+  av_interleaved_write_frame(_mpegtsContext, &packet);
+  int ret = avio_close_dyn_buf(_mpegtsContext->pb, &destbuffer);
+  writeMpegtsPacket((__bridge void *)self, destbuffer, ret);
+  av_free(destbuffer);
+  avio_open_dyn_buf(&_mpegtsContext->pb);
 }
 
 #pragma mark - RTP Streaming
@@ -427,17 +397,17 @@ int writeMpegtsPacket(void *opaque, uint8_t *buf, int buf_size)
 {
   avformat_network_init();
 
+  AVStream *outputStream;
+  
   avformat_alloc_output_context2(&_rtpContext, NULL, "rtp", "rtp://192.168.1.76:49990");
+//  avformat_alloc_output_context2(&_rtpContext, NULL, "rtp", "rtp://54.227.246.98:5000");
   avio_open(&_rtpContext->pb, _rtpContext->filename, AVIO_FLAG_WRITE);
   _rtpContext->debug = TRUE;
+  outputStream = avformat_new_stream(_rtpContext, NULL); // Usage of codec member in AVStream is deprecated so we set it to NULL
 
   AVCodecParameters *codecParameters = avcodec_parameters_alloc();
   codecParameters->codec_id = AV_CODEC_ID_MPEG2TS;
-
-  AVStream *outputStream;
-
-  // Usage of codec member in AVStream is deprecated so we set it to NULL
-  outputStream = avformat_new_stream(_rtpContext, NULL);
+  codecParameters->bit_rate = RESULTING_VIDEO_WIDTH * RESULTING_VIDEO_HEIGHT;
   outputStream->codecpar = codecParameters;
 
   int ret = avformat_write_header(_rtpContext, NULL);
@@ -471,8 +441,10 @@ int writeMpegtsPacket(void *opaque, uint8_t *buf, int buf_size)
   av_init_packet(&packet);
   packet.data = buffer;
   packet.size = buf_size;
+
+//  printf("Packet size:\n\n%d\n", packet.size);
   
-  av_write_frame(_rtpContext, &packet);
+  av_interleaved_write_frame(_rtpContext, &packet);
   return buf_size;
 }
 
